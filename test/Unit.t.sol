@@ -329,6 +329,8 @@ contract SparkBoostedVault_UnitTests is Test {
 
         vm.expectEmit(address(vault));
         emit ISparkBoostedVault.Drip(RAY, 0);
+
+        vm.expectEmit(address(vault));
         emit ISparkBoostedVault.VsrSet(setter, FOUR_PCT_VSR);
 
         vm.prank(setter);
@@ -880,6 +882,43 @@ contract SparkBoostedVault_UnitTests is Test {
         vm.expectRevert("SparkBoostedVault/zero-position");
         vm.prank(user1);
         vault.withdraw(1, 1, recipient);
+    }
+
+    function test_withdraw_partial_insufficientWithdrawableBoundary() external {
+        vault.__setPosition(1, ISparkBoostedVault.Position({
+            principal   : 100_000e6,
+            shares      : 100_000e6,
+            depositTime : uint64(vm.getBlockTimestamp())
+        }));
+
+        vault.__addPositionId(user1, 1);
+        vault.__setTotalShares(100_000e6);
+        vault.__setTotalPrincipal(100_000e6);
+
+        vm.mockCall(
+            address(asset),
+            abi.encodeCall(IERC20Like.balanceOf, (address(vault))),
+            abi.encode(1_000_000e6)
+        );
+
+        vm.expectRevert("SparkBoostedVault/insufficient-withdrawable");
+        vm.prank(user1);
+        vault.withdraw(1, 100_000e6 + 1, recipient);
+
+        vm.mockCall(
+            address(asset),
+            abi.encodeCall(IERC20Like.balanceOf, (address(vault))),
+            abi.encode(1_000_000e6)
+        );
+
+        vm.mockCall(
+            address(asset),
+            abi.encodeCall(IERC20Like.transfer, (recipient, 100_000e6)),
+            abi.encode(true)
+        );
+
+        vm.prank(user1);
+        vault.withdraw(1, 100_000e6, recipient);
     }
 
     function test_withdraw_partial_notOwner() external {
@@ -1926,7 +1965,7 @@ contract SparkBoostedVault_UnitTests is Test {
     /*** maxWithdrawOf Tests                                                                    ***/
     /**********************************************************************************************/
 
-    function test_maxWithdrawOf_xxx() external {
+    function test_maxWithdrawOf() external {
         vault.__setPosition(1, ISparkBoostedVault.Position({
             principal   : 100_000e6,
             shares      : 100_000e6,

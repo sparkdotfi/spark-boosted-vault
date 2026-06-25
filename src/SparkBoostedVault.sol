@@ -66,9 +66,9 @@ contract SparkBoostedVault is ISparkBoostedVault, UUPSUpgradeable, AccessControl
         mapping (uint256 positionId => Position position)                positions;
     }
 
-    // keccak256(abi.encode(uint256(keccak256("spark.storage.SparkBoostedVault")) - 1)) & ~bytes32(uint256(0xff))
+    // keccak256(abi.encode(uint256(keccak256("spark.storage.SparkBoostedVault.v1")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 internal constant VAULT_STORAGE_LOCATION =
-        0xc17bc7d7900d416104247b8a376a9ec13ddcf9b23ba3053d5835239467c9f800;
+        0x2172e6ff7d5a8d9d53591d5f3f1d2be5b532667b6d54094ee3cc625fe343d900;
 
     function _getVaultStorage() internal pure returns (VaultStorage storage $) {
         assembly {
@@ -462,7 +462,8 @@ contract SparkBoostedVault is ISparkBoostedVault, UUPSUpgradeable, AccessControl
 
         uint256 withdrawable_ = withdrawableOf(positionId_);
 
-        require(withdrawable_ != 0, "SparkBoostedVault/zero-position");
+        require(withdrawable_ != 0,       "SparkBoostedVault/zero-position");
+        require(assets_ <= withdrawable_, "SparkBoostedVault/insufficient-withdrawable");
 
         VaultStorage          storage $              = _getVaultStorage();
         EnumerableSet.UintSet storage positionIdSet_ = $.positionIdSets[msg.sender];

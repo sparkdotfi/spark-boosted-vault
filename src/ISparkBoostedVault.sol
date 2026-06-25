@@ -31,12 +31,12 @@ interface ISparkBoostedVault is IAccessControlEnumerable {
      * @notice Represents a user's deposit position in the vault.
      * @param  principal   Asset amount the account has put in, minus any withdrawn principal.
      * @param  shares      Raw rate-based shares; raw assets = shares * chi / RAY.
-     * @param  depositTime Effective deposit time, blended on deposit and partial withdraw.
+     * @param  depositTime Effective deposit time.
      */
     struct Position {
-        uint256 principal;   // Asset amount put in, minus any withdrawn principal.
-        uint256 shares;      // Raw rate-based shares; raw assets = shares * chi / RAY.
-        uint64  depositTime; // Effective deposit time, blended on deposit/withdraw.
+        uint256 principal;
+        uint256 shares;
+        uint64  depositTime;
     }
 
     /**********************************************************************************************/
