@@ -205,7 +205,7 @@ interface ISparkBoostedVault is IAccessControlEnumerable {
     function withdraw(uint256 positionId_, uint256 assets_, address recipient_) external;
 
     /**********************************************************************************************/
-    /*** Variables.                                                                             ***/
+    /*** Variables                                                                              ***/
     /**********************************************************************************************/
 
     /**
