@@ -68,7 +68,7 @@ interface ISparkBoostedVault is IAccessControlEnumerable {
     /**
      * @notice Emitted every time drip() is called at a new rho.
      * @param  chi  The new rate accumulator value after the drip [ray].
-     * @param  diff The change in raw total assets [asset units].
+     * @param  diff The approximate change in aggregate raw total assets [asset units].
      */
     event Drip(uint256 chi, uint256 diff);
 
@@ -81,10 +81,10 @@ interface ISparkBoostedVault is IAccessControlEnumerable {
 
     /**
      * @notice Emitted when the VSR bounds are updated.
-     * @param  maxVsr New maximum [ray].
      * @param  minVsr New minimum [ray].
+     * @param  maxVsr New maximum [ray].
      */
-    event VsrBoundsSet(uint256 maxVsr, uint256 minVsr);
+    event VsrBoundsSet(uint256 minVsr, uint256 maxVsr);
 
     /**
      * @notice Emitted when the VSR is updated.
@@ -94,7 +94,7 @@ interface ISparkBoostedVault is IAccessControlEnumerable {
     event VsrSet(address indexed sender, uint256 vsr);
 
     /**
-     * @notice ERC4626 withdraw event.
+     * @notice Emitted when a withdraw occurs.
      * @param  account    The position owner whose state was reduced.
      * @param  positionId The unique identifier of the position.
      * @param  assets     The amount of underlying assets sent to receiver.
@@ -179,9 +179,9 @@ interface ISparkBoostedVault is IAccessControlEnumerable {
     /**
      * @notice Allows authorized accounts with TAKER_ROLE to withdraw assets from the vault.
      * @dev    Transfers the specified amount of underlying assets to the caller.
-     * @param  value_ The amount of assets to withdraw [asset units].
+     * @param  assets_ The amount of assets to withdraw [asset units].
      */
-    function take(uint256 value_) external;
+    function take(uint256 assets_) external;
 
     /**
      * @notice Withdraws all assets from a specific position.

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.35;
 
-import { IERC20 }         from "../lib/oz/contracts/token/ERC20/IERC20.sol";
-import { IERC20Metadata } from "../lib/oz/contracts/token/ERC20/extensions/IERC20Metadata.sol";
-import { SafeERC20 }      from "../lib/oz/contracts/token/ERC20/utils/SafeERC20.sol";
-import { EnumerableSet }  from "../lib/oz/contracts/utils/structs/EnumerableSet.sol";
-import { Math }           from "../lib/oz/contracts/utils/math/Math.sol";
+import { IERC20 }    from "../lib/oz/contracts/token/ERC20/IERC20.sol";
+import { SafeERC20 } from "../lib/oz/contracts/token/ERC20/utils/SafeERC20.sol";
+
+import { EnumerableSet } from "../lib/oz/contracts/utils/structs/EnumerableSet.sol";
+import { Math }          from "../lib/oz/contracts/utils/math/Math.sol";
 
 import {
     AccessControlEnumerableUpgradeable
@@ -48,7 +48,7 @@ contract SparkBoostedVault is ISparkBoostedVault, UUPSUpgradeable, AccessControl
     /*** Vault Storage                                                                          ***/
     /**********************************************************************************************/
 
-    /// @custom:storage-location erc7201:spark.storage.SparkBoostedVault
+    /// @custom:storage-location erc7201:spark.storage.SparkBoostedVault.v1
     struct VaultStorage {
         address asset;
         uint192 chi;
@@ -95,7 +95,7 @@ contract SparkBoostedVault is ISparkBoostedVault, UUPSUpgradeable, AccessControl
     bytes32 public constant override TAKER_ROLE  = keccak256("TAKER_ROLE");
 
     /// @inheritdoc ISparkBoostedVault
-    string public constant override VERSION = "1";
+    string public constant override VERSION = "1.0.0";
 
     /**********************************************************************************************/
     /*** Constructor                                                                            ***/
@@ -115,8 +115,10 @@ contract SparkBoostedVault is ISparkBoostedVault, UUPSUpgradeable, AccessControl
         override
         initializer
     {
-        require(term_  != 0,     "SparkBoostedVault/invalid-term");
-        require(cliff_ <= term_, "SparkBoostedVault/cliff-gt-term");
+        require(asset_ != address(0), "SparkBoostedVault/zero-asset");
+        require(admin_ != address(0), "SparkBoostedVault/zero-admin");
+        require(term_  != 0,          "SparkBoostedVault/invalid-term");
+        require(cliff_ <= term_,      "SparkBoostedVault/cliff-gt-term");
 
         VaultStorage storage $ = _getVaultStorage();
 
@@ -153,7 +155,7 @@ contract SparkBoostedVault is ISparkBoostedVault, UUPSUpgradeable, AccessControl
 
         VaultStorage storage $ = _getVaultStorage();
 
-        emit VsrBoundsSet($.maxVsr = maxVsr_, $.minVsr = minVsr_);
+        emit VsrBoundsSet($.minVsr = minVsr_, $.maxVsr = maxVsr_);
     }
 
     /**********************************************************************************************/
@@ -196,15 +198,15 @@ contract SparkBoostedVault is ISparkBoostedVault, UUPSUpgradeable, AccessControl
         if (block.timestamp <= rho_) return;
 
         uint256 chi_    = $.chi;
-        uint256 newChi_ = _rpow($.vsr, block.timestamp - rho_) * chi_ / RAY;
+        uint256 nowChi_ = nowChi();
 
         // Safe as newChi is limited to maxUint256/RAY (which is < maxUint192).
-        $.chi = uint192(newChi_);
+        $.chi = uint192(nowChi_);
         $.rho = uint64(block.timestamp);
 
         uint256 totalShares_ = $.totalShares;
 
-        emit Drip(newChi_, ((totalShares_ * newChi_) / RAY) - ((totalShares_ * chi_) / RAY));
+        emit Drip(nowChi_, ((totalShares_ * nowChi_) / RAY) - ((totalShares_ * chi_) / RAY));
     }
 
     /// @inheritdoc ISparkBoostedVault
@@ -362,9 +364,9 @@ contract SparkBoostedVault is ISparkBoostedVault, UUPSUpgradeable, AccessControl
     }
 
     /// @inheritdoc ISparkBoostedVault
-    function vestingMultiplierOf(uint256 positionId) public view override returns (uint256) {
+    function vestingMultiplierOf(uint256 positionId_) public view override returns (uint256) {
         VaultStorage storage $         = _getVaultStorage();
-        Position     storage position_ = $.positions[positionId];
+        Position     storage position_ = $.positions[positionId_];
 
         uint64 depositTime_ = position_.depositTime;
 
@@ -477,6 +479,8 @@ contract SparkBoostedVault is ISparkBoostedVault, UUPSUpgradeable, AccessControl
         uint256 sharePortion_     = Math.ceilDiv(shares_ * assets_,    withdrawable_);
         uint256 principalPortion_ = Math.ceilDiv(principal_ * assets_, withdrawable_);
 
+        require(assets_ != 0 && sharePortion_ != 0, "SparkBoostedVault/zero-withdrawal");
+
         if (sharePortion_ == shares_ || principalPortion_ == principal_) {
             positionIdSet_.remove(positionId_);
 
@@ -488,8 +492,6 @@ contract SparkBoostedVault is ISparkBoostedVault, UUPSUpgradeable, AccessControl
             position_.shares    = shares_ - sharePortion_;
             position_.principal = principal_ - principalPortion_;
         }
-
-        require(assets_ != 0 && sharePortion_ != 0, "SparkBoostedVault/zero-withdrawal");
 
         $.totalShares    -= sharePortion_;
         $.totalPrincipal -= principalPortion_;
@@ -506,6 +508,8 @@ contract SparkBoostedVault is ISparkBoostedVault, UUPSUpgradeable, AccessControl
     // Only DEFAULT_ADMIN_ROLE can upgrade the implementation
     function _authorizeUpgrade(address) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
+    // See borrowed implementation:
+    // https://github.com/sky-ecosystem/sdai/blob/e6f8cfa1d638b1ef1c6187a1d18f73b21d2754a2/src/SavingsDai.sol#L118
     function _rpow(uint256 x, uint256 n) internal pure returns (uint256 z) {
         assembly {
             switch x case 0 {switch n case 0 {z := RAY} default {z := 0}}
