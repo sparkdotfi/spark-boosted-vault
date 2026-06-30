@@ -400,13 +400,13 @@ contract SparkBoostedVault_UnitTests is Test {
         uint256 liquidity = 300_000e6;
 
         _mockAndExpectCall(
-            address(asset),
+            asset,
             abi.encodeCall(IERC20Like.balanceOf, (address(vault))),
             abi.encode(liquidity)
         );
 
         _mockAndExpectCall(
-            address(asset),
+            asset,
             abi.encodeCall(IERC20Like.transfer, (taker, liquidity)),
             abi.encode(true)
         );
@@ -433,7 +433,7 @@ contract SparkBoostedVault_UnitTests is Test {
         vault.deposit(cap + 1);
 
         vm.mockCall(
-            address(asset),
+            asset,
             abi.encodeCall(IERC20Like.transferFrom, (user1, address(vault), cap)),
             abi.encode(true)
         );
@@ -470,7 +470,7 @@ contract SparkBoostedVault_UnitTests is Test {
         emit ISparkBoostedVault.Deposit(user1, 1, principal, shares, 0);
 
         _mockAndExpectCall(
-            address(asset),
+            asset,
             abi.encodeCall(IERC20Like.transferFrom, (user1, address(vault), principal)),
             abi.encode(true)
         );
@@ -515,7 +515,7 @@ contract SparkBoostedVault_UnitTests is Test {
         emit ISparkBoostedVault.Deposit(user1, 1, principal, shares, code);
 
         _mockAndExpectCall(
-            address(asset),
+            asset,
             abi.encodeCall(IERC20Like.transferFrom, (user1, address(vault), principal)),
             abi.encode(true)
         );
@@ -559,7 +559,7 @@ contract SparkBoostedVault_UnitTests is Test {
         emit ISparkBoostedVault.Deposit(user1, 1, principalUser1, sharesUser1, 0);
 
         _mockAndExpectCall(
-            address(asset),
+            asset,
             abi.encodeCall(IERC20Like.transferFrom, (user1, address(vault), principalUser1)),
             abi.encode(true)
         );
@@ -579,7 +579,7 @@ contract SparkBoostedVault_UnitTests is Test {
         emit ISparkBoostedVault.Deposit(user2, 2, principalUser2, sharesUser2, 0);
 
         _mockAndExpectCall(
-            address(asset),
+            asset,
             abi.encodeCall(IERC20Like.transferFrom, (user2, address(vault), principalUser2)),
             abi.encode(true)
         );
@@ -652,7 +652,7 @@ contract SparkBoostedVault_UnitTests is Test {
         vault.__setTotalPrincipal(principal);
 
         vm.mockCall(
-            address(asset),
+            asset,
             abi.encodeCall(IERC20Like.balanceOf, (address(vault))),
             abi.encode(principal - 1)
         );
@@ -662,13 +662,13 @@ contract SparkBoostedVault_UnitTests is Test {
         vault.withdraw(1, recipient);
 
         vm.mockCall(
-            address(asset),
+            asset,
             abi.encodeCall(IERC20Like.balanceOf, (address(vault))),
             abi.encode(principal)
         );
 
         vm.mockCall(
-            address(asset),
+            asset,
             abi.encodeCall(IERC20Like.transfer, (recipient, principal)),
             abi.encode(true)
         );
@@ -695,13 +695,13 @@ contract SparkBoostedVault_UnitTests is Test {
         vault.__setRho(uint64(vm.getBlockTimestamp()) - 1);
 
         _mockAndExpectCall(
-            address(asset),
+            asset,
             abi.encodeCall(IERC20Like.balanceOf, (address(vault))),
             abi.encode(1_000_000e6)
         );
 
         _mockAndExpectCall(
-            address(asset),
+            asset,
             abi.encodeCall(IERC20Like.transfer, (recipient, principal)),
             abi.encode(true)
         );
@@ -748,13 +748,13 @@ contract SparkBoostedVault_UnitTests is Test {
         uint256 vestedYield = (yield * multiplier) / RAY;
 
         _mockAndExpectCall(
-            address(asset),
+            asset,
             abi.encodeCall(IERC20Like.balanceOf, (address(vault))),
             abi.encode(1_000_000e6)
         );
 
         _mockAndExpectCall(
-            address(asset),
+            asset,
             abi.encodeCall(IERC20Like.transfer, (recipient, principal + vestedYield)),
             abi.encode(true)
         );
@@ -801,13 +801,13 @@ contract SparkBoostedVault_UnitTests is Test {
         uint256 vestedYield = (yield * multiplier) / RAY;
 
         _mockAndExpectCall(
-            address(asset),
+            asset,
             abi.encodeCall(IERC20Like.balanceOf, (address(vault))),
             abi.encode(1_000_000e6)
         );
 
         _mockAndExpectCall(
-            address(asset),
+            asset,
             abi.encodeCall(IERC20Like.transfer, (recipient, principal + vestedYield)),
             abi.encode(true)
         );
@@ -852,13 +852,13 @@ contract SparkBoostedVault_UnitTests is Test {
         uint256 vestedYield = ((principal * chi) / RAY) - principal;
 
         _mockAndExpectCall(
-            address(asset),
+            asset,
             abi.encodeCall(IERC20Like.balanceOf, (address(vault))),
             abi.encode(1_000_000e6)
         );
 
         _mockAndExpectCall(
-            address(asset),
+            asset,
             abi.encodeCall(IERC20Like.transfer, (recipient, principal + vestedYield)),
             abi.encode(true)
         );
@@ -903,13 +903,13 @@ contract SparkBoostedVault_UnitTests is Test {
         uint256 vestedYield = ((principal * chi) / RAY) - principal;
 
         _mockAndExpectCall(
-            address(asset),
+            asset,
             abi.encodeCall(IERC20Like.balanceOf, (address(vault))),
             abi.encode(1_000_000e6)
         );
 
         _mockAndExpectCall(
-            address(asset),
+            asset,
             abi.encodeCall(IERC20Like.transfer, (recipient, principal + vestedYield)),
             abi.encode(true)
         );
@@ -959,7 +959,7 @@ contract SparkBoostedVault_UnitTests is Test {
         vault.__setTotalPrincipal(principal);
 
         vm.mockCall(
-            address(asset),
+            asset,
             abi.encodeCall(IERC20Like.balanceOf, (address(vault))),
             abi.encode(1_000_000e6)
         );
@@ -969,13 +969,13 @@ contract SparkBoostedVault_UnitTests is Test {
         vault.withdraw(1, principal + 1, recipient);
 
         vm.mockCall(
-            address(asset),
+            asset,
             abi.encodeCall(IERC20Like.balanceOf, (address(vault))),
             abi.encode(1_000_000e6)
         );
 
         vm.mockCall(
-            address(asset),
+            asset,
             abi.encodeCall(IERC20Like.transfer, (recipient, principal)),
             abi.encode(true)
         );
@@ -1025,7 +1025,7 @@ contract SparkBoostedVault_UnitTests is Test {
         vault.__setTotalPrincipal(principal);
 
         vm.mockCall(
-            address(asset),
+            asset,
             abi.encodeCall(IERC20Like.balanceOf, (address(vault))),
             abi.encode(40_000e6 - 1)
         );
@@ -1035,13 +1035,13 @@ contract SparkBoostedVault_UnitTests is Test {
         vault.withdraw(1, 40_000e6, recipient);
 
         vm.mockCall(
-            address(asset),
+            asset,
             abi.encodeCall(IERC20Like.balanceOf, (address(vault))),
             abi.encode(40_000e6)
         );
 
         vm.mockCall(
-            address(asset),
+            asset,
             abi.encodeCall(IERC20Like.transfer, (recipient, 40_000e6)),
             abi.encode(true)
         );
@@ -1073,13 +1073,13 @@ contract SparkBoostedVault_UnitTests is Test {
         uint256 sharePortion     = 40_000e6;
 
         _mockAndExpectCall(
-            address(asset),
+            asset,
             abi.encodeCall(IERC20Like.balanceOf, (address(vault))),
             abi.encode(1_000_000e6)
         );
 
         _mockAndExpectCall(
-            address(asset),
+            asset,
             abi.encodeCall(IERC20Like.transfer, (recipient, principalPortion)),
             abi.encode(true)
         );
@@ -1131,13 +1131,13 @@ contract SparkBoostedVault_UnitTests is Test {
         uint256 vestedYield = (yield * multiplier) / RAY;
 
         _mockAndExpectCall(
-            address(asset),
+            asset,
             abi.encodeCall(IERC20Like.balanceOf, (address(vault))),
             abi.encode(1_000_000e6)
         );
 
         _mockAndExpectCall(
-            address(asset),
+            asset,
             abi.encodeCall(IERC20Like.transfer, (recipient, principalPortion + vestedYield)),
             abi.encode(true)
         );
@@ -1189,13 +1189,13 @@ contract SparkBoostedVault_UnitTests is Test {
         uint256 vestedYield = (yield * multiplier) / RAY;
 
         _mockAndExpectCall(
-            address(asset),
+            asset,
             abi.encodeCall(IERC20Like.balanceOf, (address(vault))),
             abi.encode(1_000_000e6)
         );
 
         _mockAndExpectCall(
-            address(asset),
+            asset,
             abi.encodeCall(IERC20Like.transfer, (recipient, principalPortion + vestedYield)),
             abi.encode(true)
         );
@@ -1245,13 +1245,13 @@ contract SparkBoostedVault_UnitTests is Test {
         uint256 vestedYield = ((principalPortion * chi) / RAY) - principalPortion;
 
         _mockAndExpectCall(
-            address(asset),
+            asset,
             abi.encodeCall(IERC20Like.balanceOf, (address(vault))),
             abi.encode(1_000_000e6)
         );
 
         _mockAndExpectCall(
-            address(asset),
+            asset,
             abi.encodeCall(IERC20Like.transfer, (recipient, principalPortion + vestedYield)),
             abi.encode(true)
         );
@@ -1301,13 +1301,13 @@ contract SparkBoostedVault_UnitTests is Test {
         uint256 vestedYield = ((principalPortion * chi) / RAY) - principalPortion;
 
         _mockAndExpectCall(
-            address(asset),
+            asset,
             abi.encodeCall(IERC20Like.balanceOf, (address(vault))),
             abi.encode(1_000_000e6)
         );
 
         _mockAndExpectCall(
-            address(asset),
+            asset,
             abi.encodeCall(IERC20Like.transfer, (recipient, principalPortion + vestedYield)),
             abi.encode(true)
         );
@@ -2104,7 +2104,7 @@ contract SparkBoostedVault_UnitTests is Test {
         vault.__setChi(1.1e27);
 
         _mockAndExpectCall(
-            address(asset),
+            asset,
             abi.encodeCall(IERC20Like.balanceOf, (address(vault))),
             abi.encode(110_000e6 + 1)
         );
@@ -2112,7 +2112,7 @@ contract SparkBoostedVault_UnitTests is Test {
         assertEq(vault.maxWithdrawOf(1), 110_000e6);
 
         _mockAndExpectCall(
-            address(asset),
+            asset,
             abi.encodeCall(IERC20Like.balanceOf, (address(vault))),
             abi.encode(110_000e6)
         );
@@ -2120,7 +2120,7 @@ contract SparkBoostedVault_UnitTests is Test {
         assertEq(vault.maxWithdrawOf(1), 110_000e6);
 
         _mockAndExpectCall(
-            address(asset),
+            asset,
             abi.encodeCall(IERC20Like.balanceOf, (address(vault))),
             abi.encode(110_000e6 - 1)
         );
