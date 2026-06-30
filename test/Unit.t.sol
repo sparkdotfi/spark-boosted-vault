@@ -369,13 +369,11 @@ contract SparkBoostedVault_UnitTests is Test {
         uint256 liquidity = 1_000e6;
 
         _mockBalanceOf(asset, address(vault), liquidity);
+        _mockTransfer(asset, taker, liquidity, true);
 
         vm.expectRevert("SparkBoostedVault/insufficient-liquidity");
         vm.prank(taker);
         vault.take(liquidity + 1);
-
-        _mockBalanceOf(asset, address(vault), liquidity);
-        _mockTransfer(asset, taker, liquidity, true);
 
         vm.prank(taker);
         vault.take(liquidity);
@@ -404,11 +402,11 @@ contract SparkBoostedVault_UnitTests is Test {
         vm.prank(admin);
         vault.setMaxLiabilityCap(cap);
 
+        _mockTransferFrom(asset, user1, address(vault), cap, true);
+
         vm.expectRevert("SparkBoostedVault/max-liability-cap-exceeded");
         vm.prank(user1);
         vault.deposit(cap + 1);
-
-        _mockTransferFrom(asset, user1, address(vault), cap, true);
 
         vm.prank(user1);
         vault.deposit(cap);
@@ -597,24 +595,30 @@ contract SparkBoostedVault_UnitTests is Test {
         uint256 principal = 100_000e6;
         uint256 shares    = 100_000e6;
 
+        vault.__addPositionId(user1, 1);
+        vault.__setTotalShares(shares);
+        vault.__setTotalPrincipal(principal + 1);
+
         vault.__setPosition(1, ISparkBoostedVault.Position({
-            principal   : principal,
+            principal   : principal + 1,
             shares      : shares,
             depositTime : uint64(vm.getBlockTimestamp() - CLIFF + 1)
         }));
 
-        vault.__addPositionId(user1, 1);
-        vault.__setTotalShares(shares);
-        vault.__setTotalPrincipal(principal);
-
-        _mockBalanceOf(asset, address(vault), principal - 1);
+        _mockBalanceOf(asset, address(vault), principal);
+        _mockTransfer(asset, recipient, principal, true);
 
         vm.expectRevert("SparkBoostedVault/insufficient-liquidity");
         vm.prank(user1);
         vault.withdraw(1, recipient);
 
-        _mockBalanceOf(asset, address(vault), principal);
-        _mockTransfer(asset, recipient, principal, true);
+        vault.__setTotalPrincipal(principal);
+
+        vault.__setPosition(1, ISparkBoostedVault.Position({
+            principal   : principal,
+            shares      : shares,
+            depositTime : uint64(vm.getBlockTimestamp() - CLIFF + 1)
+        }));
 
         vm.prank(user1);
         vault.withdraw(1, recipient);
@@ -857,13 +861,11 @@ contract SparkBoostedVault_UnitTests is Test {
         vault.__setTotalPrincipal(principal);
 
         _mockBalanceOf(asset, address(vault), 1_000_000e6);
+        _mockTransfer(asset, recipient, principal, true);
 
         vm.expectRevert("SparkBoostedVault/insufficient-withdrawable");
         vm.prank(user1);
         vault.withdraw(1, principal + 1, recipient);
-
-        _mockBalanceOf(asset, address(vault), 1_000_000e6);
-        _mockTransfer(asset, recipient, principal, true);
 
         vm.prank(user1);
         vault.withdraw(1, principal, recipient);
@@ -909,14 +911,12 @@ contract SparkBoostedVault_UnitTests is Test {
         vault.__setTotalShares(shares);
         vault.__setTotalPrincipal(principal);
 
-        _mockBalanceOf(asset, address(vault), 40_000e6 - 1);
+        _mockBalanceOf(asset, address(vault), 40_000e6);
+        _mockTransfer(asset, recipient, 40_000e6, true);
 
         vm.expectRevert("SparkBoostedVault/insufficient-liquidity");
         vm.prank(user1);
-        vault.withdraw(1, 40_000e6, recipient);
-
-        _mockBalanceOf(asset, address(vault), 40_000e6);
-        _mockTransfer(asset, recipient, 40_000e6, true);
+        vault.withdraw(1, 40_000e6 + 1, recipient);
 
         vm.prank(user1);
         vault.withdraw(1, 40_000e6, recipient);
