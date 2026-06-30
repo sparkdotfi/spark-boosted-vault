@@ -399,8 +399,7 @@ contract SparkBoostedVault_UnitTests is Test {
     function test_deposit_depositCapExceededBoundary() external {
         uint256 cap = 1_000_000e6;
 
-        vm.prank(admin);
-        vault.setMaxLiabilityCap(cap);
+        vault.__setMaxLiabilityCap(cap);
 
         _mockTransferFrom(asset, user1, address(vault), cap, true);
 
@@ -424,8 +423,7 @@ contract SparkBoostedVault_UnitTests is Test {
     function test_deposit() external {
         vault.__setRho(uint64(vm.getBlockTimestamp()) - 1);
 
-        vm.prank(admin);
-        vault.setMaxLiabilityCap(1_000_000e6);
+        vault.__setMaxLiabilityCap(1_000_000e6);
 
         assertEq(vault.totalShares(),    0);
         assertEq(vault.totalPrincipal(), 0);
@@ -464,8 +462,7 @@ contract SparkBoostedVault_UnitTests is Test {
     function test_deposit_withReferral() external {
         vault.__setRho(uint64(vm.getBlockTimestamp()) - 1);
 
-        vm.prank(admin);
-        vault.setMaxLiabilityCap(1_000_000e6);
+        vault.__setMaxLiabilityCap(1_000_000e6);
 
         uint256 principal = 100_000e6;
         uint256 shares    = 100_000e6;
@@ -505,8 +502,7 @@ contract SparkBoostedVault_UnitTests is Test {
     function test_deposit_multipleUsers() external {
         vault.__setRho(uint64(vm.getBlockTimestamp()) - 1);
 
-        vm.prank(admin);
-        vault.setMaxLiabilityCap(1_000_000e6);
+        vault.__setMaxLiabilityCap(1_000_000e6);
 
         assertEq(vault.totalShares(),    0);
         assertEq(vault.totalPrincipal(), 0);
