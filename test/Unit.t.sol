@@ -8,6 +8,7 @@ import { IAccessControl }           from "../lib/oz/contracts/access/IAccessCont
 import { ERC1967Proxy }             from "../lib/oz/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import { IERC165 }                  from "../lib/oz/contracts/utils/introspection/IERC165.sol";
 import { EnumerableSet }            from "../lib/oz/contracts/utils/structs/EnumerableSet.sol";
+import { Math }                     from "../lib/oz/contracts/utils/math/Math.sol";
 
 import { Initializable } from "../lib/oz/contracts/proxy/utils/Initializable.sol";
 
@@ -476,18 +477,19 @@ contract SparkBoostedVault_UnitTests is Test {
         uint256 principal = 100_000e6;
         uint256 shares    = 100_000e6;
 
+        _expectAndMockTransferFrom(asset, user1, address(vault), principal, true);
+
         vm.expectEmit(address(vault));
         emit ISparkBoostedVault.Drip(uint192(RAY), 0);
 
         vm.expectEmit(address(vault));
         emit ISparkBoostedVault.Deposit(user1, 1, principal, shares, 0);
 
-        _expectAndMockTransferFrom(asset, user1, address(vault), principal, true);
-
         vm.prank(user1);
         uint256 positionId = vault.deposit(principal);
 
-        assertEq(positionId,             1);
+        assertEq(positionId, 1);
+
         assertEq(vault.rho(),            vm.getBlockTimestamp());
         assertEq(vault.totalShares(),    shares);
         assertEq(vault.totalPrincipal(), principal);
@@ -530,7 +532,8 @@ contract SparkBoostedVault_UnitTests is Test {
         vm.prank(user1);
         uint256 positionId = vault.deposit(principal, code);
 
-        assertEq(positionId,             1);
+        assertEq(positionId, 1);
+
         assertEq(vault.rho(),            vm.getBlockTimestamp());
         assertEq(vault.totalShares(),    shares);
         assertEq(vault.totalPrincipal(), principal);
@@ -573,7 +576,8 @@ contract SparkBoostedVault_UnitTests is Test {
         vm.prank(user1);
         uint256 positionId1 = vault.deposit(principalUser1);
 
-        assertEq(positionId1,            1);
+        assertEq(positionId1, 1);
+
         assertEq(vault.rho(),            vm.getBlockTimestamp());
         assertEq(vault.totalShares(),    sharesUser1);
         assertEq(vault.totalPrincipal(), principalUser1);
@@ -589,7 +593,8 @@ contract SparkBoostedVault_UnitTests is Test {
         vm.prank(user2);
         uint256 positionId2 = vault.deposit(principalUser2);
 
-        assertEq(positionId2,            2);
+        assertEq(positionId2, 2);
+
         assertEq(vault.rho(),            vm.getBlockTimestamp());
         assertEq(vault.totalShares(),    sharesUser1    + sharesUser2);
         assertEq(vault.totalPrincipal(), principalUser1 + principalUser2);
@@ -615,6 +620,59 @@ contract SparkBoostedVault_UnitTests is Test {
 
         assertEq(user2PositionIds.length, 1);
         assertEq(user2PositionIds[0],     2);
+    }
+
+    function testFuzz_deposit(
+        uint256 totalShares,
+        uint256 totalPrincipal,
+        uint256 chi,
+        uint256 principal
+    ) external {
+        totalShares     = bound(totalShares,    0,       1_000_000_000e18);
+        totalPrincipal  = bound(totalPrincipal, 0,       1_000_000_000e18);
+        chi             = bound(chi,            1e27,    100e27);
+        principal       = bound(principal,      1_000e6, 1_000_000_000e18);
+
+        vault.__setMaxLiabilityCap(type(uint256).max);
+        vault.__setChi(uint192(chi));
+        vault.__setRho(uint64(vm.getBlockTimestamp()));
+        vault.__setTotalShares(totalShares);
+        vault.__setTotalPrincipal(totalPrincipal);
+
+        assertEq(vault.chi(),            chi);
+        assertEq(vault.rho(),            vm.getBlockTimestamp());
+        assertEq(vault.totalShares(),    totalShares);
+        assertEq(vault.totalPrincipal(), totalPrincipal);
+
+        assertEq(vault.getPositionIdsOf(user1).length, 0);
+
+        uint256 expectedShares = principal * RAY / chi;
+
+        vm.expectEmit(address(vault));
+        emit ISparkBoostedVault.Deposit(user1, 1, principal, expectedShares, 0);
+
+        _expectAndMockTransferFrom(asset, user1, address(vault), principal, true);
+
+        vm.prank(user1);
+        uint256 positionId = vault.deposit(principal);
+
+        assertEq(positionId, 1);
+
+        assertEq(vault.chi(),            chi);
+        assertEq(vault.rho(),            vm.getBlockTimestamp());
+        assertEq(vault.totalShares(),    totalShares + expectedShares);
+        assertEq(vault.totalPrincipal(), totalPrincipal + principal);
+
+        ISparkBoostedVault.Position memory position = vault.getPosition(positionId);
+
+        assertEq(position.principal,   principal);
+        assertEq(position.shares,      expectedShares);
+        assertEq(position.depositTime, uint64(vm.getBlockTimestamp()));
+
+        uint256[] memory positionIds = vault.getPositionIdsOf(user1);
+
+        assertEq(positionIds.length, 1);
+        assertEq(positionIds[0],     1);
     }
 
     /**********************************************************************************************/
@@ -1000,6 +1058,72 @@ contract SparkBoostedVault_UnitTests is Test {
         assertEq(vault.rho(),            vm.getBlockTimestamp());
         assertEq(vault.totalShares(),    0);
         assertEq(vault.totalPrincipal(), 0);
+
+        assertEq(vault.getPositionIdsOf(user1).length, 0);
+
+        position = vault.getPosition(1);
+
+        assertEq(position.principal,   0);
+        assertEq(position.shares,      0);
+        assertEq(position.depositTime, 0);
+    }
+
+    function testFuzz_withdraw(
+        uint256 totalShares,
+        uint256 totalPrincipal,
+        uint256 chi,
+        uint256 principal,
+        uint256 shares,
+        uint256 depositTime
+    ) external {
+        totalShares     = bound(totalShares,    1_000e6,                             1_000_000_000e18);
+        totalPrincipal  = bound(totalPrincipal, 1_000e6,                             1_000_000_000e18);
+        chi             = bound(chi,            1e27,                                100e27);
+        principal       = bound(principal,      1_000e6,                             totalPrincipal);
+        shares          = bound(shares,         1_000e6,                             totalShares);
+        depositTime     = bound(depositTime,    vm.getBlockTimestamp() - (2 * TERM), vm.getBlockTimestamp());
+
+        vault.__setChi(uint192(chi));
+        vault.__setRho(uint64(vm.getBlockTimestamp()));
+        vault.__setTotalShares(totalShares);
+        vault.__setTotalPrincipal(totalPrincipal);
+        vault.__addPositionId(user1, 1);
+
+        vault.__setPosition(1, ISparkBoostedVault.Position({
+            principal   : principal,
+            shares      : shares,
+            depositTime : uint64(depositTime)
+        }));
+
+        assertEq(vault.rho(),            vm.getBlockTimestamp());
+        assertEq(vault.totalShares(),    totalShares);
+        assertEq(vault.totalPrincipal(), totalPrincipal);
+
+        uint256[] memory positionIds = vault.getPositionIdsOf(user1);
+
+        assertEq(positionIds.length, 1);
+        assertEq(positionIds[0],     1);
+
+        ISparkBoostedVault.Position memory position = vault.getPosition(1);
+
+        assertEq(position.principal,   principal);
+        assertEq(position.shares,      shares);
+        assertEq(position.depositTime, depositTime);
+
+        uint256 withdrawable = _getWithdrawable(depositTime, principal, shares, chi);
+
+        _expectAndMockBalanceOf(asset, address(vault), withdrawable);
+        _expectAndMockTransfer(asset, recipient, withdrawable, true);
+
+        vm.expectEmit(address(vault));
+        emit ISparkBoostedVault.Withdraw(user1, 1, withdrawable, shares);
+
+        vm.prank(user1);
+        vault.withdraw(1, recipient);
+
+        assertEq(vault.rho(),            vm.getBlockTimestamp());
+        assertEq(vault.totalShares(),    totalShares - shares);
+        assertEq(vault.totalPrincipal(), totalPrincipal - principal);
 
         assertEq(vault.getPositionIdsOf(user1).length, 0);
 
@@ -1481,6 +1605,105 @@ contract SparkBoostedVault_UnitTests is Test {
         assertEq(position.principal,   principal - principalPortion);
         assertEq(position.shares,      shares    - sharePortion);
         assertEq(position.depositTime, depositTime);
+    }
+
+    function testFuzz_withdraw_partial(
+        uint256 totalShares,
+        uint256 totalPrincipal,
+        uint256 chi,
+        uint256 principal,
+        uint256 shares,
+        uint256 depositTime,
+        uint256 withdrawAmount
+    ) external {
+        totalShares     = bound(totalShares,    1_000e6,                             1_000_000_000e18);
+        totalPrincipal  = bound(totalPrincipal, 1_000e6,                             1_000_000_000e18);
+        chi             = bound(chi,            1e27,                                100e27);
+        principal       = bound(principal,      1_000e6,                             totalPrincipal);
+        shares          = bound(shares,         1_000e6,                             totalShares);
+        depositTime     = bound(depositTime,    vm.getBlockTimestamp() - (2 * TERM), vm.getBlockTimestamp());
+        withdrawAmount  = bound(withdrawAmount, 1_000e6,                             2 * principal);
+
+        vault.__setChi(uint192(chi));
+        vault.__setRho(uint64(vm.getBlockTimestamp()));
+        vault.__setTotalShares(totalShares);
+        vault.__setTotalPrincipal(totalPrincipal);
+        vault.__addPositionId(user1, 1);
+
+        vault.__setPosition(1, ISparkBoostedVault.Position({
+            principal   : principal,
+            shares      : shares,
+            depositTime : uint64(depositTime)
+        }));
+
+        assertEq(vault.rho(),            vm.getBlockTimestamp());
+        assertEq(vault.totalShares(),    totalShares);
+        assertEq(vault.totalPrincipal(), totalPrincipal);
+
+        uint256[] memory positionIds = vault.getPositionIdsOf(user1);
+
+        assertEq(positionIds.length, 1);
+        assertEq(positionIds[0],     1);
+
+        ISparkBoostedVault.Position memory position = vault.getPosition(1);
+
+        assertEq(position.principal,   principal);
+        assertEq(position.shares,      shares);
+        assertEq(position.depositTime, depositTime);
+
+        uint256 withdrawable = _getWithdrawable(depositTime, principal, shares, chi);
+
+        uint256 sharePortion     = Math.ceilDiv(shares * withdrawAmount,    withdrawable);
+        uint256 principalPortion = Math.ceilDiv(principal * withdrawAmount, withdrawable);
+
+        if (sharePortion >= shares || principalPortion >= principal) {
+            sharePortion     = shares;
+            principalPortion = principal;
+        }
+
+        if (withdrawAmount <= withdrawable) {
+            _expectAndMockBalanceOf(asset, address(vault), withdrawAmount);
+            _expectAndMockTransfer(asset, recipient, withdrawAmount, true);
+
+            vm.expectEmit(address(vault));
+            emit ISparkBoostedVault.Withdraw(user1, 1, withdrawAmount, sharePortion);
+        } else {
+            vm.expectRevert(
+                abi.encodeWithSelector(
+                    ISparkBoostedVault.InsufficientWithdrawable.selector,
+                    withdrawAmount,
+                    withdrawable
+                )
+            );
+        }
+
+        vm.prank(user1);
+        vault.withdraw(1, withdrawAmount, recipient);
+
+        if (withdrawAmount > withdrawable) return;
+
+        assertEq(vault.rho(),            vm.getBlockTimestamp());
+        assertEq(vault.totalShares(),    totalShares - sharePortion);
+        assertEq(vault.totalPrincipal(), totalPrincipal - principalPortion);
+
+        position = vault.getPosition(1);
+
+        if (sharePortion == shares) {
+            assertEq(position.principal,   0);
+            assertEq(position.shares,      0);
+            assertEq(position.depositTime, 0);
+
+            assertEq(vault.getPositionIdsOf(user1).length, 0);
+        } else {
+            assertEq(position.principal,   principal - principalPortion);
+            assertEq(position.shares,      shares    - sharePortion);
+            assertEq(position.depositTime, depositTime);
+
+            positionIds = vault.getPositionIdsOf(user1);
+
+            assertEq(positionIds.length, 1);
+            assertEq(positionIds[0],     1);
+        }
     }
 
     /**********************************************************************************************/
@@ -1990,7 +2213,7 @@ contract SparkBoostedVault_UnitTests is Test {
         assertEq(vault.chi(), uint192(RAY));
 
         uint256 expectedNewChi = 1.039999999999999999955174055e27;
-        uint256 expectedDiff = ((100_000e6 * expectedNewChi) / RAY) - 100_000e6;
+        uint256 expectedDiff   = ((100_000e6 * expectedNewChi) / RAY) - 100_000e6;
 
         vm.expectEmit(address(vault));
         emit ISparkBoostedVault.Drip(expectedNewChi, expectedDiff);
@@ -2018,7 +2241,7 @@ contract SparkBoostedVault_UnitTests is Test {
         assertEq(vault.rho(), pastTimestamp);
 
         uint256 expectedNewChi = vault.nowChi();
-        uint256 expectedDiff = ((shares * expectedNewChi) / RAY) - ((shares * chi) / RAY);
+        uint256 expectedDiff   = ((shares * expectedNewChi) / RAY) - ((shares * chi) / RAY);
 
         vm.expectEmit(address(vault));
         emit ISparkBoostedVault.Drip(expectedNewChi, expectedDiff);
@@ -2577,6 +2800,30 @@ contract SparkBoostedVault_UnitTests is Test {
         vm.expectRevert(
             abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, account, role)
         );
+    }
+
+    function _safeSub(uint256 a, uint256 b) internal pure returns (uint256) {
+        return a > b ? a - b : 0;
+    }
+
+    function _getWithdrawable(
+        uint256 depositTime,
+        uint256 principal,
+        uint256 shares,
+        uint256 chi
+    ) internal view returns (uint256 withdrawable) {
+        uint256 elapsed = vm.getBlockTimestamp() - depositTime;
+
+        uint256 multiplier =
+            elapsed < CLIFF
+                ? 0
+                : elapsed >= TERM
+                    ? RAY
+                    : (elapsed * elapsed * RAY) / (uint256(TERM) * TERM);
+
+        uint256 vestedYield  = (_safeSub((shares * chi) / RAY, principal) * multiplier) / RAY;
+
+        return principal + vestedYield;
     }
 
 }
