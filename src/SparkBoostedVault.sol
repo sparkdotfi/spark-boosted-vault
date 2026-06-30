@@ -62,8 +62,8 @@ contract SparkBoostedVault is ISparkBoostedVault, UUPSUpgradeable, AccessControl
         uint64  cliff;
         uint64  rho;
         uint64  term;
-        mapping (address account => EnumerableSet.UintSet positionIdSet) positionIdSets;
-        mapping (uint256 positionId => Position position)                positions;
+        mapping (address account    => EnumerableSet.UintSet positionIdSet) positionIdSets;
+        mapping (uint256 positionId => Position position)                   positions;
     }
 
     // keccak256(abi.encode(uint256(keccak256("spark.storage.SparkBoostedVault.v1")) - 1)) & ~bytes32(uint256(0xff))
