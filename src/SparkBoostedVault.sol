@@ -200,7 +200,7 @@ contract SparkBoostedVault is ISparkBoostedVault, UUPSUpgradeable, AccessControl
         uint256 chi_    = $.chi;
         uint256 nowChi_ = nowChi();
 
-        // Safe as newChi is limited to maxUint256/RAY (which is < maxUint192).
+        // Safe as `nowChi_` is limited to `maxUint256/RAY`, which is less than `type(uint192).max`.
         $.chi = uint192(nowChi_);
         $.rho = uint64(block.timestamp);
 
