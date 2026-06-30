@@ -62,10 +62,10 @@ contract UserHandler is HandlerBase {
         uint32  userIndex_
     ) public {
         uint256 maxDeposit = vault.maxDeposit();
-        if (maxDeposit == 0) return;
+        if (maxDeposit < 1 * 10 ** IERC20Metadata(address(asset)).decimals()) return;
 
         address user = _randomUser(userIndex_);
-        assetAmount_ = _bound(assetAmount_, 1, _min(maxDeposit, MAX_AMOUNT));
+        assetAmount_ = _bound(assetAmount_, 1 * 10 ** IERC20Metadata(address(asset)).decimals(), _min(maxDeposit, MAX_AMOUNT));
 
         uint256 shares = assetAmount_ * RAY / vault.chi();
         if (shares == 0) return;
