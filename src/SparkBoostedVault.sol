@@ -102,7 +102,7 @@ contract SparkBoostedVault is ISparkBoostedVault, UUPSUpgradeable, AccessControl
     /**********************************************************************************************/
 
     constructor() {
-        _disableInitializers();  // Avoid initializing in the context of the implementation
+        _disableInitializers();  // Avoid initializing in the context of the implementation.
     }
 
     /**********************************************************************************************/
@@ -115,10 +115,10 @@ contract SparkBoostedVault is ISparkBoostedVault, UUPSUpgradeable, AccessControl
         override
         initializer
     {
-        require(asset_ != address(0), "SparkBoostedVault/zero-asset");
-        require(admin_ != address(0), "SparkBoostedVault/zero-admin");
-        require(term_  != 0,          "SparkBoostedVault/invalid-term");
-        require(cliff_ <= term_,      "SparkBoostedVault/cliff-gt-term");
+        require(asset_ != address(0), ZeroAsset());
+        require(admin_ != address(0), ZeroAdmin());
+        require(term_  != 0,          ZeroTerm());
+        require(cliff_ <= term_,      CliffGreaterThanTerm(cliff_, term_));
 
         VaultStorage storage $ = _getVaultStorage();
 
@@ -149,9 +149,9 @@ contract SparkBoostedVault is ISparkBoostedVault, UUPSUpgradeable, AccessControl
         override
         onlyRole(DEFAULT_ADMIN_ROLE)
     {
-        require(minVsr_ >= RAY,     "SparkBoostedVault/vsr-too-low");
-        require(maxVsr_ <= MAX_VSR, "SparkBoostedVault/vsr-too-high");
-        require(minVsr_ <= maxVsr_, "SparkBoostedVault/min-vsr-gt-max-vsr");
+        require(minVsr_ >= RAY,     VsrTooLow(minVsr_, RAY));
+        require(maxVsr_ <= MAX_VSR, VsrTooHigh(maxVsr_, MAX_VSR));
+        require(minVsr_ <= maxVsr_, MinVsrGreaterThanMaxVsr(minVsr_, maxVsr_));
 
         VaultStorage storage $ = _getVaultStorage();
 
@@ -166,8 +166,8 @@ contract SparkBoostedVault is ISparkBoostedVault, UUPSUpgradeable, AccessControl
     function setVsr(uint256 vsr_) external override onlyRole(SETTER_ROLE) {
         VaultStorage storage $ = _getVaultStorage();
 
-        require(vsr_ >= $.minVsr, "SparkBoostedVault/vsr-too-low");
-        require(vsr_ <= $.maxVsr, "SparkBoostedVault/vsr-too-high");
+        require(vsr_ >= $.minVsr, VsrTooLow(vsr_, $.minVsr));
+        require(vsr_ <= $.maxVsr, VsrTooHigh(vsr_, $.maxVsr));
 
         drip();
 
@@ -424,14 +424,14 @@ contract SparkBoostedVault is ISparkBoostedVault, UUPSUpgradeable, AccessControl
 
         require(
             maxLiability() + assets_ <= $.maxLiabilityCap,
-            "SparkBoostedVault/max-liability-cap-exceeded"
+            MaxLiabilityCapExceeded(maxLiability() + assets_, $.maxLiabilityCap)
         );
 
         positionId_ = ++$.positionCount;
 
         uint256 shares_ = assets_ * RAY / $.chi;
 
-        require(assets_ != 0 && shares_ != 0, "SparkBoostedVault/zero-deposit");
+        require(assets_ != 0 && shares_ != 0, ZeroDeposit());
 
         $.positions[positionId_] = Position({
             principal   : assets_,
@@ -452,8 +452,9 @@ contract SparkBoostedVault is ISparkBoostedVault, UUPSUpgradeable, AccessControl
     function _pushAsset(address to_, uint256 amount_) internal {
         IERC20 asset_ = IERC20(_getVaultStorage().asset);
 
-        require(amount_ <= asset_.balanceOf(address(this)),
-            "SparkBoostedVault/insufficient-liquidity"
+        require(
+            amount_ <= asset_.balanceOf(address(this)),
+            InsufficientLiquidity(amount_, asset_.balanceOf(address(this)))
         );
 
         SafeERC20.safeTransfer(asset_, to_, amount_);
@@ -464,13 +465,13 @@ contract SparkBoostedVault is ISparkBoostedVault, UUPSUpgradeable, AccessControl
 
         uint256 withdrawable_ = withdrawableOf(positionId_);
 
-        require(withdrawable_ != 0,       "SparkBoostedVault/zero-position");
-        require(assets_ <= withdrawable_, "SparkBoostedVault/insufficient-withdrawable");
+        require(withdrawable_ > 0,        ZeroPosition());
+        require(assets_ <= withdrawable_, InsufficientWithdrawable(assets_, withdrawable_));
 
         VaultStorage          storage $              = _getVaultStorage();
         EnumerableSet.UintSet storage positionIdSet_ = $.positionIdSets[msg.sender];
 
-        require(positionIdSet_.contains(positionId_), "SparkBoostedVault/not-owner");
+        require(positionIdSet_.contains(positionId_), NotPositionOwner());
 
         Position storage position_ = $.positions[positionId_];
 
@@ -479,7 +480,7 @@ contract SparkBoostedVault is ISparkBoostedVault, UUPSUpgradeable, AccessControl
         uint256 sharePortion_     = Math.ceilDiv(shares_ * assets_,    withdrawable_);
         uint256 principalPortion_ = Math.ceilDiv(principal_ * assets_, withdrawable_);
 
-        require(assets_ != 0 && sharePortion_ != 0, "SparkBoostedVault/zero-withdrawal");
+        require(assets_ != 0 && sharePortion_ != 0, ZeroWithdrawal());
 
         if (sharePortion_ == shares_ || principalPortion_ == principal_) {
             positionIdSet_.remove(positionId_);

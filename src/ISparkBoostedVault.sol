@@ -108,6 +108,96 @@ interface ISparkBoostedVault is IAccessControlEnumerable {
     );
 
     /**********************************************************************************************/
+    /*** Custom Errors                                                                          ***/
+    /**********************************************************************************************/
+
+    /**
+     * @notice Thrown when the vesting cliff duration is greater than the total vault term.
+     * @param  cliff The vesting cliff duration [seconds].
+     * @param  term  The total vesting term [seconds].
+     */
+    error CliffGreaterThanTerm(uint64 cliff, uint64 term);
+
+    /**
+     * @notice Thrown when the contract lacks sufficient liquidity to execute a transfer.
+     * @param  amount    The requested transfer amount [asset units].
+     * @param  liquidity The available contract balance [asset units].
+     */
+    error InsufficientLiquidity(uint256 amount, uint256 liquidity);
+
+    /**
+     * @notice Thrown when withdrawing more assets than are currently withdrawable from the
+     *         position.
+     * @param  assets       The requested withdrawal amount [asset units].
+     * @param  withdrawable The maximum assets currently withdrawable [asset units].
+     */
+    error InsufficientWithdrawable(uint256 assets, uint256 withdrawable);
+
+    /**
+     * @notice Thrown when a deposit would cause the total liability to exceed the cap.
+     * @param  liability       The attempted total liability [asset units].
+     * @param  maxLiabilityCap The maximum liability cap [asset units].
+     */
+    error MaxLiabilityCapExceeded(uint256 liability, uint256 maxLiabilityCap);
+
+    /**
+     * @notice Thrown when the VSR bounds are set such that the minimum is greater than the maximum.
+     * @param  minVsr The proposed minimum Vault Savings Rate [ray].
+     * @param  maxVsr The proposed maximum Vault Savings Rate [ray].
+     */
+    error MinVsrGreaterThanMaxVsr(uint256 minVsr, uint256 maxVsr);
+
+    /**
+     * @notice Thrown when the caller is not the owner of the specified position.
+     */
+    error NotPositionOwner();
+
+    /**
+     * @notice Thrown when the VSR is above the maximum allowed bound.
+     * @param  vsr    The attempted Vault Savings Rate [ray].
+     * @param  maxVsr The maximum allowed Vault Savings Rate [ray].
+     */
+    error VsrTooHigh(uint256 vsr, uint256 maxVsr);
+
+    /**
+     * @notice Thrown when the VSR is below the minimum allowed bound.
+     * @param  vsr    The attempted Vault Savings Rate [ray].
+     * @param  minVsr The minimum allowed Vault Savings Rate [ray].
+     */
+    error VsrTooLow(uint256 vsr, uint256 minVsr);
+
+    /**
+     * @notice Thrown when the admin address is address(0).
+     */
+    error ZeroAdmin();
+
+    /**
+     * @notice Thrown when the underlying asset is address(0).
+     */
+    error ZeroAsset();
+
+    /**
+     * @notice Thrown when the deposit amount or resulting shares is zero.
+     */
+    error ZeroDeposit();
+
+    /**
+     * @notice Thrown when trying to withdraw from a position that does not exist or has
+     *         zero withdrawable assets.
+     */
+    error ZeroPosition();
+
+    /**
+     * @notice Thrown when the vault term duration is zero.
+     */
+    error ZeroTerm();
+
+    /**
+     * @notice Thrown when a withdrawal would result in zero shares or zero assets withdrawn.
+     */
+    error ZeroWithdrawal();
+
+    /**********************************************************************************************/
     /*** Interactive Functions                                                                  ***/
     /**********************************************************************************************/
 
