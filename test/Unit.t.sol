@@ -772,6 +772,9 @@ contract SparkBoostedVault_UnitTests is Test {
         uint256 yield       = ((principal * chi) / RAY) - principal;
         uint256 vestedYield = (yield * multiplier) / RAY;
 
+        assertEq(yield,       10_000e6);
+        assertEq(vestedYield, 607.993995e6);
+
         _expectAndMockBalanceOf(asset, address(vault), 1_000_000e6);
         _expectAndMockTransfer(asset, recipient, principal + vestedYield, true);
 
@@ -833,6 +836,9 @@ contract SparkBoostedVault_UnitTests is Test {
         uint256 yield       = ((principal * chi) / RAY) - principal;
         uint256 vestedYield = (yield * multiplier) / RAY;
 
+        assertEq(yield,       10_000e6);
+        assertEq(vestedYield, 2_500e6);
+
         _expectAndMockBalanceOf(asset, address(vault), 1_000_000e6);
         _expectAndMockTransfer(asset, recipient, principal + vestedYield, true);
 
@@ -892,6 +898,8 @@ contract SparkBoostedVault_UnitTests is Test {
 
         uint256 vestedYield = ((principal * chi) / RAY) - principal;
 
+        assertEq(vestedYield, 10_000e6);
+
         _expectAndMockBalanceOf(asset, address(vault), 1_000_000e6);
         _expectAndMockTransfer(asset, recipient, principal + vestedYield, true);
 
@@ -950,6 +958,8 @@ contract SparkBoostedVault_UnitTests is Test {
         assertEq(position.depositTime, uint64(vm.getBlockTimestamp() - (2 * TERM)));
 
         uint256 vestedYield = ((principal * chi) / RAY) - principal;
+
+        assertEq(vestedYield, 10_000e6);
 
         _expectAndMockBalanceOf(asset, address(vault), 1_000_000e6);
         _expectAndMockTransfer(asset, recipient, principal + vestedYield, true);
@@ -1051,7 +1061,7 @@ contract SparkBoostedVault_UnitTests is Test {
         vault.__setPosition(1, ISparkBoostedVault.Position({
             principal   : principal,
             shares      : shares,
-            depositTime : uint64(vm.getBlockTimestamp() - CLIFF + 1)
+            depositTime : uint64(vm.getBlockTimestamp())
         }));
 
         vault.__addPositionId(user1, 1);
@@ -1181,6 +1191,9 @@ contract SparkBoostedVault_UnitTests is Test {
         uint256 yield       = ((principalPortion * chi) / RAY) - principalPortion;
         uint256 vestedYield = (yield * multiplier) / RAY;
 
+        assertEq(yield,       4_000e6);
+        assertEq(vestedYield, 243.197598e6);
+
         _expectAndMockBalanceOf(asset, address(vault), 1_000_000e6);
         _expectAndMockTransfer(asset, recipient, principalPortion + vestedYield, true);
 
@@ -1250,6 +1263,9 @@ contract SparkBoostedVault_UnitTests is Test {
         uint256 yield       = ((principalPortion * chi) / RAY) - principalPortion;
         uint256 vestedYield = (yield * multiplier) / RAY;
 
+        assertEq(yield,       4_000e6);
+        assertEq(vestedYield, 1_000e6);
+
         _expectAndMockBalanceOf(asset, address(vault), 1_000_000e6);
         _expectAndMockTransfer(asset, recipient, principalPortion + vestedYield, true);
 
@@ -1316,6 +1332,8 @@ contract SparkBoostedVault_UnitTests is Test {
         uint256 sharePortion     = 40_000e6;
 
         uint256 vestedYield = ((principalPortion * chi) / RAY) - principalPortion;
+
+        assertEq(vestedYield, 4_000e6);
 
         _expectAndMockBalanceOf(asset, address(vault), 1_000_000e6);
         _expectAndMockTransfer(asset, recipient, principalPortion + vestedYield, true);
@@ -1384,6 +1402,8 @@ contract SparkBoostedVault_UnitTests is Test {
 
         uint256 vestedYield = ((principalPortion * chi) / RAY) - principalPortion;
 
+        assertEq(vestedYield, 4_000e6);
+
         _expectAndMockBalanceOf(asset, address(vault), 1_000_000e6);
         _expectAndMockTransfer(asset, recipient, principalPortion + vestedYield, true);
 
@@ -1443,6 +1463,7 @@ contract SparkBoostedVault_UnitTests is Test {
 
         uint256 expected = (uint256(CLIFF) * CLIFF * RAY) / (uint256(TERM) * TERM);
 
+        assertEq(expected,                     0.060799399512103584162131732e27);
         assertEq(vault.vestingMultiplierOf(1), expected);
     }
 
@@ -1457,6 +1478,7 @@ contract SparkBoostedVault_UnitTests is Test {
 
         uint256 expected = (uint256(TERM / 2) * (TERM / 2) * RAY) / (uint256(TERM) * TERM);
 
+        assertEq(expected,                     0.25e27);
         assertEq(vault.vestingMultiplierOf(1), expected);
     }
 
