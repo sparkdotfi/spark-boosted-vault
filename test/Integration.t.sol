@@ -104,7 +104,7 @@ contract SparkBoostedVaultIntegrationTests is Test {
 
         uint256 yield = vault.yieldOf(positionId);
 
-        assertGt(yield,                          0);                 // shows yield accrued
+        assertGt(yield,                            0);                 // shows yield accrued
         assertEq(vault.vestedYieldOf(positionId),  yield);             // shows its entirely vested
         assertEq(vault.withdrawableOf(positionId), principal + yield); // shows its entirely withdrawable
 
@@ -313,6 +313,7 @@ contract SparkBoostedVaultIntegrationTests is Test {
 
         vm.prank(user1);
         vault.withdraw(positionId1, user1);
+
         assertEq(vault.totalPrincipal(), principal2);
         assertEq(vault.maxLiability(),   principal2 + unvestedYield2);
 
