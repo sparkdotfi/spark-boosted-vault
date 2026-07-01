@@ -158,6 +158,24 @@ contract SparkBoostedVault is ISparkBoostedVault, UUPSUpgradeable, AccessControl
         emit VsrBoundsSet($.minVsr = minVsr_, $.maxVsr = maxVsr_);
     }
 
+    /// @inheritdoc ISparkBoostedVault
+    function setCliff(uint64 cliff_) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        VaultStorage storage $ = _getVaultStorage();
+
+        require(cliff_ <= $.term, CliffGreaterThanTerm(cliff_, $.term));
+
+        emit CliffSet(msg.sender, $.cliff = cliff_);
+    }
+
+    /// @inheritdoc ISparkBoostedVault
+    function setTerm(uint64 term_) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        VaultStorage storage $ = _getVaultStorage();
+
+        require($.cliff <= term_, CliffGreaterThanTerm($.cliff, term_));
+
+        emit TermSet(msg.sender, $.term = term_);
+    }
+
     /**********************************************************************************************/
     /*** External Interactive Setter Functions                                                  ***/
     /**********************************************************************************************/
