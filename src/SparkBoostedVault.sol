@@ -171,7 +171,7 @@ contract SparkBoostedVault is ISparkBoostedVault, UUPSUpgradeable, AccessControl
     function setTerm(uint64 term_) external override onlyRole(DEFAULT_ADMIN_ROLE) {
         VaultStorage storage $ = _getVaultStorage();
 
-        require($.cliff <= term_, CliffGreaterThanTerm($.cliff, term_));
+        require(term_ >= $.cliff, CliffGreaterThanTerm($.cliff, term_));
 
         emit TermSet(msg.sender, $.term = term_);
     }
