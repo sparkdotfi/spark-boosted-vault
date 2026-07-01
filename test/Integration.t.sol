@@ -49,7 +49,6 @@ contract SparkBoostedVaultIntegrationTests is Test {
         vm.startPrank(admin);
 
         vault.grantRole(SETTER_ROLE, setter);
-
         vault.grantRole(TAKER_ROLE,  taker);
 
         vault.setMaxLiabilityCap(1_000_000e6);
