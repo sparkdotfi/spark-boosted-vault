@@ -650,7 +650,7 @@ contract SparkBoostedVault_UnitTests is Test {
         vault.__setPosition(1, ISparkBoostedVault.Position({
             principal   : principal + 1,
             shares      : shares,
-            depositTime : uint64(vm.getBlockTimestamp() - CLIFF + 1)
+            depositTime : uint64(vm.getBlockTimestamp())
         }));
 
         _mockBalanceOf(asset, address(vault), principal);
@@ -672,7 +672,7 @@ contract SparkBoostedVault_UnitTests is Test {
         vault.__setPosition(1, ISparkBoostedVault.Position({
             principal   : principal,
             shares      : shares,
-            depositTime : uint64(vm.getBlockTimestamp() - CLIFF + 1)
+            depositTime : uint64(vm.getBlockTimestamp())
         }));
 
         vm.prank(user1);
