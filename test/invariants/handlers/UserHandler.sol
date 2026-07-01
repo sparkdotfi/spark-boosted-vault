@@ -31,14 +31,14 @@ contract UserHandler is HandlerBase {
         return _positionIds[index_];
     }
 
-    function deposit(uint256 assetAmount_, uint32 userIndex_) public {
+    function deposit(uint256 assetAmount_, uint32 userIndex_) public chiNeverDecreases {
         uint256 maxDeposit = vault.maxDeposit();
-        if (maxDeposit < 1 * 10 ** IERC20Metadata(address(asset)).decimals()) return;
+        if (maxDeposit == 0) return;
 
         address user = _randomUser(userIndex_);
-        assetAmount_ = _bound(assetAmount_, 1 * 10 ** IERC20Metadata(address(asset)).decimals(), _min(maxDeposit, MAX_AMOUNT));
+        assetAmount_ = _bound(assetAmount_, 1, _min(maxDeposit, MAX_AMOUNT));
 
-        uint256 shares = assetAmount_ * RAY / vault.chi();
+        uint256 shares = assetAmount_ * RAY / vault.nowChi();
         if (shares == 0) return;
 
         deal(address(asset), user, assetAmount_);
@@ -60,14 +60,15 @@ contract UserHandler is HandlerBase {
         uint256 assetAmount_,
         uint16  referral_,
         uint32  userIndex_
-    ) public {
+    ) public chiNeverDecreases {
         uint256 maxDeposit = vault.maxDeposit();
-        if (maxDeposit < 1 * 10 ** IERC20Metadata(address(asset)).decimals()) return;
+        if (maxDeposit == 0) return;
 
         address user = _randomUser(userIndex_);
-        assetAmount_ = _bound(assetAmount_, 1 * 10 ** IERC20Metadata(address(asset)).decimals(), _min(maxDeposit, MAX_AMOUNT));
 
-        uint256 shares = assetAmount_ * RAY / vault.chi();
+        assetAmount_ = _bound(assetAmount_, 1, _min(maxDeposit, MAX_AMOUNT));
+
+        uint256 shares = assetAmount_ * RAY / vault.nowChi();
         if (shares == 0) return;
 
         deal(address(asset), user, assetAmount_);
@@ -85,7 +86,11 @@ contract UserHandler is HandlerBase {
         vm.stopPrank();
     }
 
-    function withdraw(uint256 positionId_) public {
+    function withdraw(uint256 positionId_) public chiNeverDecreases {
+        if (_positionIds.length == 0) return;
+
+        positionId_ = _bound(positionId_, 0, _positionIds.length - 1);
+
         if (vault.getPosition(positionId_).depositTime == 0) return;
 
         if (vault.withdrawableOf(positionId_) > asset.balanceOf(address(vault))) return;
@@ -96,7 +101,11 @@ contract UserHandler is HandlerBase {
         vault.withdraw(positionId_, owner);
     }
 
-    function partialWithdraw(uint256 positionId_, uint256 assets_) public {
+    function partialWithdraw(uint256 positionId_, uint256 assets_) public chiNeverDecreases {
+        if (_positionIds.length == 0) return;
+
+        positionId_ = _bound(positionId_, 0, _positionIds.length - 1);
+
         if (vault.getPosition(positionId_).depositTime == 0) return;
 
         uint256 maxWithdrawable = vault.maxWithdrawOf(positionId_);

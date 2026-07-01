@@ -17,6 +17,22 @@ contract HandlerBase is Test {
     IERC20            internal asset;
     SparkBoostedVault internal vault;
 
+    modifier chiNeverDecreases() {
+        uint256 nowChiBefore = vault.nowChi();
+        _;
+        assertGe(vault.nowChi(), nowChiBefore, "invariant: nowChi decreased");
+    }
+
+    modifier vaultTotalAmountsNeverChange() {
+        uint256 totalPrincipalBefore = vault.totalPrincipal();
+        uint256 totalSharesBefore    = vault.totalShares();
+
+        _;
+
+        assertEq(vault.totalPrincipal(), totalPrincipalBefore, "invariant: totalPrincipal changed");
+        assertEq(vault.totalShares(), totalSharesBefore,       "invariant: totalShares changed");
+    }
+
     constructor(address vault_) {
         vault      = SparkBoostedVault(vault_);
         asset      = IERC20(vault.asset());

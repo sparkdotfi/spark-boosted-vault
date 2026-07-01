@@ -57,6 +57,35 @@ contract SparkBoostedVaultInvariantTest is SparkBoostedVaultInvariantTestBase {
     }
 
     /**********************************************************************************************/
+    /*** Post-Invariant                                                                         ***/
+    /**********************************************************************************************/
+
+    function afterInvariant() public {
+        this.simulateBankRun();
+        _checkInvariantsOverTime();
+
+        skip(TERM);
+
+        _give(vault.maxLiability());
+        _checkInvariantsOverTime();
+
+        adminHandler.setVsrBounds(RAY, RAY);
+        adminHandler.setVsr(RAY);
+
+        uint256 gap = vault.maxLiability();
+        if (gap > asset.balanceOf(address(vault))) {
+            _give(gap - asset.balanceOf(address(vault)));
+        }
+
+        this.simulateBankRun();
+        _checkInvariantsOverTime();
+
+        assertEq(vault.totalShares(),    0, "afterInvariant: totalShares != 0 after full exit");
+        assertEq(vault.totalPrincipal(), 0, "afterInvariant: totalPrincipal != 0 after full exit");
+        assertEq(vault.maxLiability(),   0, "afterInvariant: maxLiability != 0 after full exit");
+    }
+
+    /**********************************************************************************************/
     /*** Internal Helpers                                                                       ***/
     /**********************************************************************************************/
 

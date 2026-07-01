@@ -130,6 +130,7 @@ contract SparkBoostedVaultInvariantTestBase is Test {
 
     function positionInvariant_C_vestingMultiplierBounds(uint256 positionId_) public view {
         uint256 multiplier_ = vault.vestingMultiplierOf(positionId_);
+
         assertLe(multiplier_, RAY,
             string(abi.encodePacked("invariant pos-C: vestingMultiplier > RAY for id ", vm.toString(positionId_)))
         );
@@ -173,10 +174,44 @@ contract SparkBoostedVaultInvariantTestBase is Test {
     }
 
     /**********************************************************************************************/
-    /*** Helper Functions                                                                       ***/
+    /*** Bank Run Simulation                                                                    ***/
     /**********************************************************************************************/
 
-    // Donates `amount_` back to the vault to cover outstanding obligations.
+    function simulateBankRun() public {
+        uint256 n = userHandler.numPositionIds();
+
+        for (uint256 i = 0; i < n; i++) {
+            skip(2 minutes);
+
+            uint256 positionId_ = userHandler.positionIds(i);
+            if (vault.getPosition(positionId_).depositTime == 0) continue;
+
+            address owner_       = userHandler.positionOwner(positionId_);
+            uint256 withdrawable = vault.withdrawableOf(positionId_);
+            uint256 liquidity    = asset.balanceOf(address(vault));
+
+            if (withdrawable == 0) continue;
+
+            vm.startPrank(owner_);
+
+            if (liquidity >= withdrawable) {
+                vault.withdraw(positionId_, owner_);
+
+                assertEq(vault.getPosition(positionId_).depositTime, 0, "position not closed after full withdraw");
+            } else if (liquidity > 0) {
+                vault.withdraw(positionId_, liquidity, owner_);
+
+                assertEq(asset.balanceOf(address(vault)), 0, "vault not drained after partial withdraw");
+            }
+
+            vm.stopPrank();
+        }
+    }
+
+    /**********************************************************************************************/
+    /*** Helper Function                                                                        ***/
+    /**********************************************************************************************/
+
     function _give(uint256 amount_) internal {
         address taker_ = adminHandler.taker();
 

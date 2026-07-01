@@ -22,7 +22,7 @@ contract AdminHandler is HandlerBase {
         taker  = vault.getRoleMember(TAKER_ROLE,         0);
     }
 
-    function setVsrBounds(uint256 minVsr_, uint256 maxVsr_) public {
+    function setVsrBounds(uint256 minVsr_, uint256 maxVsr_) public vaultTotalAmountsNeverChange chiNeverDecreases {
         minVsr_ = _bound(minVsr_, RAY,     FOUR_PCT_VSR);
         maxVsr_ = _bound(maxVsr_, minVsr_, FORTY_PCT_VSR);
 
@@ -30,14 +30,14 @@ contract AdminHandler is HandlerBase {
         vault.setVsrBounds(minVsr_, maxVsr_);
     }
 
-    function setVsr(uint256 vsr_) public {
+    function setVsr(uint256 vsr_) public vaultTotalAmountsNeverChange chiNeverDecreases {
         vsr_ = _bound(vsr_, vault.minVsr(), vault.maxVsr());
 
         vm.prank(setter);
         vault.setVsr(vsr_);
     }
 
-    function setMaxLiabilityCap(uint256 cap_) public {
+    function setMaxLiabilityCap(uint256 cap_) public vaultTotalAmountsNeverChange chiNeverDecreases {
         uint256 currentLiability = vault.maxLiability();
 
         cap_ = _bound(cap_, currentLiability, currentLiability + MAX_AMOUNT);
@@ -46,7 +46,7 @@ contract AdminHandler is HandlerBase {
         vault.setMaxLiabilityCap(cap_);
     }
 
-    function take(uint256 amount_) public {
+    function take(uint256 amount_) public vaultTotalAmountsNeverChange chiNeverDecreases {
         amount_ = _bound(amount_, 0, asset.balanceOf(address(vault)));
 
         vm.startPrank(taker);
