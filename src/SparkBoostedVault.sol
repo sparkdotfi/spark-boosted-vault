@@ -117,7 +117,6 @@ contract SparkBoostedVault is ISparkBoostedVault, UUPSUpgradeable, AccessControl
     {
         require(asset_ != address(0), ZeroAsset());
         require(admin_ != address(0), ZeroAdmin());
-        require(term_  != 0,          ZeroTerm());
         require(cliff_ <= term_,      CliffGreaterThanTerm(cliff_, term_));
 
         VaultStorage storage $ = _getVaultStorage();
@@ -156,6 +155,24 @@ contract SparkBoostedVault is ISparkBoostedVault, UUPSUpgradeable, AccessControl
         VaultStorage storage $ = _getVaultStorage();
 
         emit VsrBoundsSet($.minVsr = minVsr_, $.maxVsr = maxVsr_);
+    }
+
+    /// @inheritdoc ISparkBoostedVault
+    function setCliff(uint64 cliff_) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        VaultStorage storage $ = _getVaultStorage();
+
+        require(cliff_ <= $.term, CliffGreaterThanTerm(cliff_, $.term));
+
+        emit CliffSet(msg.sender, $.cliff = cliff_);
+    }
+
+    /// @inheritdoc ISparkBoostedVault
+    function setTerm(uint64 term_) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        VaultStorage storage $ = _getVaultStorage();
+
+        require(term_ >= $.cliff, CliffGreaterThanTerm($.cliff, term_));
+
+        emit TermSet(msg.sender, $.term = term_);
     }
 
     /**********************************************************************************************/

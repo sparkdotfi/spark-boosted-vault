@@ -169,17 +169,6 @@ contract SparkBoostedVault_UnitTests is Test {
         );
     }
 
-    function test_initialize_invalidTerm() external {
-        vm.expectRevert(abi.encodeWithSelector(ISparkBoostedVault.ZeroTerm.selector));
-        new ERC1967Proxy(
-            implementation,
-            abi.encodeCall(
-                SparkBoostedVault.initialize,
-                (asset, admin, 0, 0)
-            )
-        );
-    }
-
     function test_initialize_invalidCliffBoundary() external {
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -382,6 +371,86 @@ contract SparkBoostedVault_UnitTests is Test {
 
         skip(365 days);
         assertGt(vault.nowChi(), RAY);
+    }
+
+    /**********************************************************************************************/
+    /*** setCliff Tests                                                                         ***/
+    /**********************************************************************************************/
+
+    function test_setCliff_unauthorized() external {
+        _expectUnauthorizedAccess(DEFAULT_ADMIN_ROLE, unauthorized);
+        vm.prank(unauthorized);
+        vault.setCliff(0);
+    }
+
+    function test_setCliff_cliffGreaterThanTermBoundary() external {
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ISparkBoostedVault.CliffGreaterThanTerm.selector,
+                TERM + 1,
+                TERM
+            )
+        );
+
+        vm.prank(admin);
+        vault.setCliff(TERM + 1);
+
+        vm.prank(admin);
+        vault.setCliff(TERM);
+    }
+
+    function test_setCliff() external {
+        assertEq(vault.cliff(), CLIFF);
+
+        uint64 cliff = 180 days;
+
+        vm.expectEmit(address(vault));
+        emit ISparkBoostedVault.CliffSet(admin, cliff);
+
+        vm.prank(admin);
+        vault.setCliff(cliff);
+
+        assertEq(vault.cliff(), cliff);
+    }
+
+    /**********************************************************************************************/
+    /*** setTerm Tests                                                                          ***/
+    /**********************************************************************************************/
+
+    function test_setTerm_unauthorized() external {
+        _expectUnauthorizedAccess(DEFAULT_ADMIN_ROLE, unauthorized);
+        vm.prank(unauthorized);
+        vault.setTerm(0);
+    }
+
+    function test_setTerm_termLessThanCliffBoundary() external {
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ISparkBoostedVault.CliffGreaterThanTerm.selector,
+                CLIFF,
+                CLIFF - 1
+            )
+        );
+
+        vm.prank(admin);
+        vault.setTerm(CLIFF - 1);
+
+        vm.prank(admin);
+        vault.setTerm(CLIFF);
+    }
+
+    function test_setTerm() external {
+        assertEq(vault.term(), TERM);
+
+        uint64 term = 600 days;
+
+        vm.expectEmit(address(vault));
+        emit ISparkBoostedVault.TermSet(admin, term);
+
+        vm.prank(admin);
+        vault.setTerm(term);
+
+        assertEq(vault.term(), term);
     }
 
     /**********************************************************************************************/
@@ -1795,8 +1864,13 @@ contract SparkBoostedVault_UnitTests is Test {
         assertEq(vault.vestingMultiplierOf(1), RAY);
     }
 
-    function testFuzz_vestingMultiplierOf(uint256 elapsed) external {
-        elapsed = bound(elapsed, CLIFF, TERM - 1);
+    function testFuzz_vestingMultiplierOf(uint256 term, uint256 cliff, uint256 elapsed) external {
+        term    = bound(term,    0, 4 * 365 days);
+        cliff   = bound(cliff,   0, term);
+        elapsed = bound(elapsed, 0, 2 * term);
+
+        vault.__setTerm(uint64(term));
+        vault.__setCliff(uint64(cliff));
 
         uint64 depositTime = uint64(vm.getBlockTimestamp() - elapsed);
 
@@ -1809,7 +1883,12 @@ contract SparkBoostedVault_UnitTests is Test {
             })
         );
 
-        uint256 expected = (elapsed * elapsed * RAY) / (TERM * TERM);
+        uint256 expected =
+            elapsed < cliff
+                ? 0
+                : elapsed >= term
+                    ? RAY
+                    : (elapsed * elapsed * RAY) / (term * term);
 
         assertEq(vault.vestingMultiplierOf(1), expected);
     }

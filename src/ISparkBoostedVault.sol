@@ -66,6 +66,13 @@ interface ISparkBoostedVault is IAccessControlEnumerable {
     event MaxLiabilityCapSet(uint256 cap);
 
     /**
+     * @notice Emitted when the vesting cliff is updated.
+     * @param  sender The caller with DEFAULT_ADMIN_ROLE.
+     * @param  cliff  New cliff [seconds].
+     */
+    event CliffSet(address indexed sender, uint64 cliff);
+
+    /**
      * @notice Emitted every time drip() is called at a new rho.
      * @param  chi  The new rate accumulator value after the drip [ray].
      * @param  diff The approximate change in aggregate raw total assets [asset units].
@@ -78,6 +85,13 @@ interface ISparkBoostedVault is IAccessControlEnumerable {
      * @param  assets The amount taken [asset units]
      */
     event Take(address indexed to, uint256 assets);
+
+    /**
+     * @notice Emitted when the vesting term is updated.
+     * @param  sender The caller with DEFAULT_ADMIN_ROLE.
+     * @param  term   New term [seconds].
+     */
+    event TermSet(address indexed sender, uint64 term);
 
     /**
      * @notice Emitted when the VSR bounds are updated.
@@ -181,9 +195,6 @@ interface ISparkBoostedVault is IAccessControlEnumerable {
      */
     error ZeroPosition();
 
-    /// @notice Thrown when the vault term duration is zero.
-    error ZeroTerm();
-
     /// @notice Thrown when a withdrawal would result in zero shares or zero assets withdrawn.
     error ZeroWithdrawal();
 
@@ -231,12 +242,28 @@ interface ISparkBoostedVault is IAccessControlEnumerable {
     function initialize(address asset_, address admin_, uint64 term_, uint64 cliff_) external;
 
     /**
+     * @notice Sets the vesting cliff duration for the vault.
+     * @dev    Can only be called by accounts with DEFAULT_ADMIN_ROLE.
+     *         The cliff must be less than or equal to the term.
+     * @param  cliff_ The new vesting cliff duration [seconds].
+     */
+    function setCliff(uint64 cliff_) external;
+
+    /**
      * @notice Sets the maximum liability cap for the vault.
      * @dev    Can only be called by accounts with DEFAULT_ADMIN_ROLE.
      *         Deposits are disabled if they would cause the total liability to exceed this cap.
      * @param  cap_ The new maximum liability cap [asset units].
      */
     function setMaxLiabilityCap(uint256 cap_) external;
+
+    /**
+     * @notice Sets the total vault term.
+     * @dev    Can only be called by accounts with DEFAULT_ADMIN_ROLE.
+     *         The term must be greater than or equal to the cliff.
+     * @param  term_ The new total vault term [seconds].
+     */
+    function setTerm(uint64 term_) external;
 
     /**
      * @notice Sets the Vault Savings Rate (VSR).
