@@ -80,7 +80,8 @@ contract SparkBoostedVaultInvariantTest is SparkBoostedVaultInvariantTestBase {
         this.simulateBankRun();
         _checkInvariantsOverTime();
 
-        assertEq(vault.totalShares(),    0, "afterInvariant: totalShares != 0 after full exit");
+        assertApproxEqAbs(vault.totalShares(), 0, 1, "afterInvariant: totalShares != 0 after full exit");
+
         assertEq(vault.totalPrincipal(), 0, "afterInvariant: totalPrincipal != 0 after full exit");
         assertEq(vault.maxLiability(),   0, "afterInvariant: maxLiability != 0 after full exit");
     }

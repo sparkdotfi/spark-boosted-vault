@@ -46,6 +46,20 @@ contract AdminHandler is HandlerBase {
         vault.setMaxLiabilityCap(cap_);
     }
 
+    function setCliff(uint64 cliff_) public vaultTotalAmountsNeverChange chiNeverDecreases {
+        cliff_ = uint64(_bound(cliff_, 0, uint256(vault.term())));
+
+        vm.prank(admin);
+        vault.setCliff(cliff_);
+    }
+
+    function setTerm(uint64 term_) public vaultTotalAmountsNeverChange chiNeverDecreases {
+        term_ = uint64(_bound(term_, vault.cliff(), 100 * 365 days));
+
+        vm.prank(admin);
+        vault.setTerm(term_);
+    }
+
     function take(uint256 amount_) public vaultTotalAmountsNeverChange chiNeverDecreases {
         amount_ = _bound(amount_, 0, asset.balanceOf(address(vault)));
 

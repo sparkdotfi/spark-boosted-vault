@@ -152,7 +152,9 @@ contract SparkBoostedVaultInvariantTestBase is Test {
     function positionInvariant_E_postCliffMultiplierGtZero(uint256 positionId_) public view {
         ISparkBoostedVault.Position memory pos = vault.getPosition(positionId_);
 
-        if (block.timestamp - pos.depositTime >= vault.cliff()) {
+        uint64 cliff_ = vault.cliff();
+
+        if (block.timestamp - pos.depositTime >= cliff_ && cliff_ != 0) {
             assertGt(
                 vault.vestingMultiplierOf(positionId_),
                 0,
