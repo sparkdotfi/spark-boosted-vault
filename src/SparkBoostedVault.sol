@@ -422,9 +422,11 @@ contract SparkBoostedVault is ISparkBoostedVault, UUPSUpgradeable, AccessControl
 
         VaultStorage storage $ = _getVaultStorage();
 
+        uint256 maxLiability_ = maxLiability();
+
         require(
-            maxLiability() + assets_ <= $.maxLiabilityCap,
-            MaxLiabilityCapExceeded(maxLiability() + assets_, $.maxLiabilityCap)
+            maxLiability_ + assets_ <= $.maxLiabilityCap,
+            MaxLiabilityCapExceeded(maxLiability_ + assets_, $.maxLiabilityCap)
         );
 
         positionId_ = ++$.positionCount;
@@ -452,10 +454,9 @@ contract SparkBoostedVault is ISparkBoostedVault, UUPSUpgradeable, AccessControl
     function _pushAsset(address to_, uint256 amount_) internal {
         IERC20 asset_ = IERC20(_getVaultStorage().asset);
 
-        require(
-            amount_ <= asset_.balanceOf(address(this)),
-            InsufficientLiquidity(amount_, asset_.balanceOf(address(this)))
-        );
+        uint256 balance = asset_.balanceOf(address(this));
+
+        require(amount_ <= balance, InsufficientLiquidity(amount_, balance));
 
         SafeERC20.safeTransfer(asset_, to_, amount_);
     }
@@ -482,7 +483,7 @@ contract SparkBoostedVault is ISparkBoostedVault, UUPSUpgradeable, AccessControl
 
         require(assets_ != 0 && sharePortion_ != 0, ZeroWithdrawal());
 
-        if (sharePortion_ == shares_ || principalPortion_ == principal_) {
+        if (sharePortion_ >= shares_ || principalPortion_ >= principal_) {
             positionIdSet_.remove(positionId_);
 
             delete $.positions[positionId_];

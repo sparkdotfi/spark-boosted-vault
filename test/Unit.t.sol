@@ -8,6 +8,7 @@ import { IAccessControl }           from "../lib/oz/contracts/access/IAccessCont
 import { ERC1967Proxy }             from "../lib/oz/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import { IERC165 }                  from "../lib/oz/contracts/utils/introspection/IERC165.sol";
 import { EnumerableSet }            from "../lib/oz/contracts/utils/structs/EnumerableSet.sol";
+import { Math }                     from "../lib/oz/contracts/utils/math/Math.sol";
 
 import { Initializable } from "../lib/oz/contracts/proxy/utils/Initializable.sol";
 
@@ -476,18 +477,19 @@ contract SparkBoostedVault_UnitTests is Test {
         uint256 principal = 100_000e6;
         uint256 shares    = 100_000e6;
 
+        _expectAndMockTransferFrom(asset, user1, address(vault), principal, true);
+
         vm.expectEmit(address(vault));
         emit ISparkBoostedVault.Drip(uint192(RAY), 0);
 
         vm.expectEmit(address(vault));
         emit ISparkBoostedVault.Deposit(user1, 1, principal, shares, 0);
 
-        _expectAndMockTransferFrom(asset, user1, address(vault), principal, true);
-
         vm.prank(user1);
         uint256 positionId = vault.deposit(principal);
 
-        assertEq(positionId,             1);
+        assertEq(positionId, 1);
+
         assertEq(vault.rho(),            vm.getBlockTimestamp());
         assertEq(vault.totalShares(),    shares);
         assertEq(vault.totalPrincipal(), principal);
@@ -530,7 +532,8 @@ contract SparkBoostedVault_UnitTests is Test {
         vm.prank(user1);
         uint256 positionId = vault.deposit(principal, code);
 
-        assertEq(positionId,             1);
+        assertEq(positionId, 1);
+
         assertEq(vault.rho(),            vm.getBlockTimestamp());
         assertEq(vault.totalShares(),    shares);
         assertEq(vault.totalPrincipal(), principal);
@@ -573,7 +576,8 @@ contract SparkBoostedVault_UnitTests is Test {
         vm.prank(user1);
         uint256 positionId1 = vault.deposit(principalUser1);
 
-        assertEq(positionId1,            1);
+        assertEq(positionId1, 1);
+
         assertEq(vault.rho(),            vm.getBlockTimestamp());
         assertEq(vault.totalShares(),    sharesUser1);
         assertEq(vault.totalPrincipal(), principalUser1);
@@ -589,7 +593,8 @@ contract SparkBoostedVault_UnitTests is Test {
         vm.prank(user2);
         uint256 positionId2 = vault.deposit(principalUser2);
 
-        assertEq(positionId2,            2);
+        assertEq(positionId2, 2);
+
         assertEq(vault.rho(),            vm.getBlockTimestamp());
         assertEq(vault.totalShares(),    sharesUser1    + sharesUser2);
         assertEq(vault.totalPrincipal(), principalUser1 + principalUser2);
@@ -617,6 +622,59 @@ contract SparkBoostedVault_UnitTests is Test {
         assertEq(user2PositionIds[0],     2);
     }
 
+    function testFuzz_deposit(
+        uint256 totalShares,
+        uint256 totalPrincipal,
+        uint256 chi,
+        uint256 principal
+    ) external {
+        totalShares     = bound(totalShares,    0,       1_000_000_000e18);
+        totalPrincipal  = bound(totalPrincipal, 0,       1_000_000_000e18);
+        chi             = bound(chi,            1e27,    100e27);
+        principal       = bound(principal,      1_000e6, 1_000_000_000e18);
+
+        vault.__setMaxLiabilityCap(type(uint256).max);
+        vault.__setChi(uint192(chi));
+        vault.__setRho(uint64(vm.getBlockTimestamp()));
+        vault.__setTotalShares(totalShares);
+        vault.__setTotalPrincipal(totalPrincipal);
+
+        assertEq(vault.chi(),            chi);
+        assertEq(vault.rho(),            vm.getBlockTimestamp());
+        assertEq(vault.totalShares(),    totalShares);
+        assertEq(vault.totalPrincipal(), totalPrincipal);
+
+        assertEq(vault.getPositionIdsOf(user1).length, 0);
+
+        uint256 expectedShares = principal * RAY / chi;
+
+        vm.expectEmit(address(vault));
+        emit ISparkBoostedVault.Deposit(user1, 1, principal, expectedShares, 0);
+
+        _expectAndMockTransferFrom(asset, user1, address(vault), principal, true);
+
+        vm.prank(user1);
+        uint256 positionId = vault.deposit(principal);
+
+        assertEq(positionId, 1);
+
+        assertEq(vault.chi(),            chi);
+        assertEq(vault.rho(),            vm.getBlockTimestamp());
+        assertEq(vault.totalShares(),    totalShares + expectedShares);
+        assertEq(vault.totalPrincipal(), totalPrincipal + principal);
+
+        ISparkBoostedVault.Position memory position = vault.getPosition(positionId);
+
+        assertEq(position.principal,   principal);
+        assertEq(position.shares,      expectedShares);
+        assertEq(position.depositTime, uint64(vm.getBlockTimestamp()));
+
+        uint256[] memory positionIds = vault.getPositionIdsOf(user1);
+
+        assertEq(positionIds.length, 1);
+        assertEq(positionIds[0],     1);
+    }
+
     /**********************************************************************************************/
     /*** withdraw Tests                                                                         ***/
     /**********************************************************************************************/
@@ -628,11 +686,14 @@ contract SparkBoostedVault_UnitTests is Test {
     }
 
     function test_withdraw_notOwner() external {
-        vault.__setPosition(1, ISparkBoostedVault.Position({
-            principal   : 100_000e6,
-            shares      : 100_000e6,
-            depositTime : uint64(vm.getBlockTimestamp())
-        }));
+        vault.__setPosition(
+            1,
+            ISparkBoostedVault.Position({
+                principal   : 100_000e6,
+                shares      : 100_000e6,
+                depositTime : uint64(vm.getBlockTimestamp())
+            })
+        );
 
         vm.expectRevert(ISparkBoostedVault.NotPositionOwner.selector);
         vm.prank(user1);
@@ -647,11 +708,14 @@ contract SparkBoostedVault_UnitTests is Test {
         vault.__setTotalShares(shares);
         vault.__setTotalPrincipal(principal + 1);
 
-        vault.__setPosition(1, ISparkBoostedVault.Position({
-            principal   : principal + 1,
-            shares      : shares,
-            depositTime : uint64(vm.getBlockTimestamp() - CLIFF + 1)
-        }));
+        vault.__setPosition(
+            1,
+            ISparkBoostedVault.Position({
+                principal   : principal + 1,
+                shares      : shares,
+                depositTime : uint64(vm.getBlockTimestamp())
+            })
+        );
 
         _mockBalanceOf(asset, address(vault), principal);
         _mockTransfer(asset, recipient, principal, true);
@@ -669,11 +733,14 @@ contract SparkBoostedVault_UnitTests is Test {
 
         vault.__setTotalPrincipal(principal);
 
-        vault.__setPosition(1, ISparkBoostedVault.Position({
-            principal   : principal,
-            shares      : shares,
-            depositTime : uint64(vm.getBlockTimestamp() - CLIFF + 1)
-        }));
+        vault.__setPosition(
+            1,
+            ISparkBoostedVault.Position({
+                principal   : principal,
+                shares      : shares,
+                depositTime : uint64(vm.getBlockTimestamp())
+            })
+        );
 
         vm.prank(user1);
         vault.withdraw(1, recipient);
@@ -684,11 +751,14 @@ contract SparkBoostedVault_UnitTests is Test {
         uint256 shares    = 100_000e6;
         uint192 chi       = 1.1e27;
 
-        vault.__setPosition(1, ISparkBoostedVault.Position({
-            principal   : principal,
-            shares      : shares,
-            depositTime : uint64(vm.getBlockTimestamp() - CLIFF + 1)
-        }));
+        vault.__setPosition(
+            1,
+            ISparkBoostedVault.Position({
+                principal   : principal,
+                shares      : shares,
+                depositTime : uint64(vm.getBlockTimestamp() - CLIFF + 1)
+            })
+        );
 
         vault.__addPositionId(user1, 1);
         vault.__setTotalShares(shares);
@@ -741,11 +811,14 @@ contract SparkBoostedVault_UnitTests is Test {
         uint256 shares    = 100_000e6;
         uint192 chi       = 1.1e27;
 
-        vault.__setPosition(1, ISparkBoostedVault.Position({
-            principal   : principal,
-            shares      : shares,
-            depositTime : uint64(vm.getBlockTimestamp() - CLIFF)
-        }));
+        vault.__setPosition(
+            1,
+            ISparkBoostedVault.Position({
+                principal   : principal,
+                shares      : shares,
+                depositTime : uint64(vm.getBlockTimestamp() - CLIFF)
+            })
+        );
 
         vault.__addPositionId(user1, 1);
         vault.__setTotalShares(shares);
@@ -771,6 +844,9 @@ contract SparkBoostedVault_UnitTests is Test {
         uint256 multiplier  = (uint256(CLIFF) * CLIFF * RAY) / (uint256(TERM) * TERM);
         uint256 yield       = ((principal * chi) / RAY) - principal;
         uint256 vestedYield = (yield * multiplier) / RAY;
+
+        assertEq(yield,       10_000e6);
+        assertEq(vestedYield, 607.993995e6);
 
         _expectAndMockBalanceOf(asset, address(vault), 1_000_000e6);
         _expectAndMockTransfer(asset, recipient, principal + vestedYield, true);
@@ -802,11 +878,14 @@ contract SparkBoostedVault_UnitTests is Test {
         uint256 shares    = 100_000e6;
         uint192 chi       = 1.1e27;
 
-        vault.__setPosition(1, ISparkBoostedVault.Position({
-            principal   : principal,
-            shares      : shares,
-            depositTime : uint64(vm.getBlockTimestamp() - (TERM / 2))
-        }));
+        vault.__setPosition(
+            1,
+            ISparkBoostedVault.Position({
+                principal   : principal,
+                shares      : shares,
+                depositTime : uint64(vm.getBlockTimestamp() - (TERM / 2))
+            })
+        );
 
         vault.__addPositionId(user1, 1);
         vault.__setTotalShares(shares);
@@ -832,6 +911,9 @@ contract SparkBoostedVault_UnitTests is Test {
         uint256 multiplier  = (uint256(TERM / 2) * (TERM / 2) * RAY) / (uint256(TERM) * TERM);
         uint256 yield       = ((principal * chi) / RAY) - principal;
         uint256 vestedYield = (yield * multiplier) / RAY;
+
+        assertEq(yield,       10_000e6);
+        assertEq(vestedYield, 2_500e6);
 
         _expectAndMockBalanceOf(asset, address(vault), 1_000_000e6);
         _expectAndMockTransfer(asset, recipient, principal + vestedYield, true);
@@ -863,11 +945,14 @@ contract SparkBoostedVault_UnitTests is Test {
         uint256 shares    = 100_000e6;
         uint192 chi       = 1.1e27;
 
-        vault.__setPosition(1, ISparkBoostedVault.Position({
-            principal   : principal,
-            shares      : shares,
-            depositTime : uint64(vm.getBlockTimestamp() - TERM)
-        }));
+        vault.__setPosition(
+            1,
+            ISparkBoostedVault.Position({
+                principal   : principal,
+                shares      : shares,
+                depositTime : uint64(vm.getBlockTimestamp() - TERM)
+            })
+        );
 
         vault.__addPositionId(user1, 1);
         vault.__setTotalShares(shares);
@@ -891,6 +976,8 @@ contract SparkBoostedVault_UnitTests is Test {
         assertEq(position.depositTime, uint64(vm.getBlockTimestamp() - TERM));
 
         uint256 vestedYield = ((principal * chi) / RAY) - principal;
+
+        assertEq(vestedYield, 10_000e6);
 
         _expectAndMockBalanceOf(asset, address(vault), 1_000_000e6);
         _expectAndMockTransfer(asset, recipient, principal + vestedYield, true);
@@ -922,11 +1009,14 @@ contract SparkBoostedVault_UnitTests is Test {
         uint256 shares    = 100_000e6;
         uint192 chi       = 1.1e27;
 
-        vault.__setPosition(1, ISparkBoostedVault.Position({
-            principal   : principal,
-            shares      : shares,
-            depositTime : uint64(vm.getBlockTimestamp() - (2 * TERM))
-        }));
+        vault.__setPosition(
+            1,
+            ISparkBoostedVault.Position({
+                principal   : principal,
+                shares      : shares,
+                depositTime : uint64(vm.getBlockTimestamp() - (2 * TERM))
+            })
+        );
 
         vault.__addPositionId(user1, 1);
         vault.__setTotalShares(shares);
@@ -950,6 +1040,8 @@ contract SparkBoostedVault_UnitTests is Test {
         assertEq(position.depositTime, uint64(vm.getBlockTimestamp() - (2 * TERM)));
 
         uint256 vestedYield = ((principal * chi) / RAY) - principal;
+
+        assertEq(vestedYield, 10_000e6);
 
         _expectAndMockBalanceOf(asset, address(vault), 1_000_000e6);
         _expectAndMockTransfer(asset, recipient, principal + vestedYield, true);
@@ -976,6 +1068,72 @@ contract SparkBoostedVault_UnitTests is Test {
         assertEq(position.depositTime, 0);
     }
 
+    function testFuzz_withdraw(
+        uint256 totalShares,
+        uint256 totalPrincipal,
+        uint256 chi,
+        uint256 principal,
+        uint256 shares,
+        uint256 depositTime
+    ) external {
+        totalShares     = bound(totalShares,    1_000e6,                             1_000_000_000e18);
+        totalPrincipal  = bound(totalPrincipal, 1_000e6,                             1_000_000_000e18);
+        chi             = bound(chi,            1e27,                                100e27);
+        principal       = bound(principal,      1_000e6,                             totalPrincipal);
+        shares          = bound(shares,         1_000e6,                             totalShares);
+        depositTime     = bound(depositTime,    vm.getBlockTimestamp() - (2 * TERM), vm.getBlockTimestamp());
+
+        vault.__setChi(uint192(chi));
+        vault.__setRho(uint64(vm.getBlockTimestamp()));
+        vault.__setTotalShares(totalShares);
+        vault.__setTotalPrincipal(totalPrincipal);
+        vault.__addPositionId(user1, 1);
+
+        vault.__setPosition(1, ISparkBoostedVault.Position({
+            principal   : principal,
+            shares      : shares,
+            depositTime : uint64(depositTime)
+        }));
+
+        assertEq(vault.rho(),            vm.getBlockTimestamp());
+        assertEq(vault.totalShares(),    totalShares);
+        assertEq(vault.totalPrincipal(), totalPrincipal);
+
+        uint256[] memory positionIds = vault.getPositionIdsOf(user1);
+
+        assertEq(positionIds.length, 1);
+        assertEq(positionIds[0],     1);
+
+        ISparkBoostedVault.Position memory position = vault.getPosition(1);
+
+        assertEq(position.principal,   principal);
+        assertEq(position.shares,      shares);
+        assertEq(position.depositTime, depositTime);
+
+        uint256 withdrawable = _getWithdrawable(depositTime, principal, shares, chi);
+
+        _expectAndMockBalanceOf(asset, address(vault), withdrawable);
+        _expectAndMockTransfer(asset, recipient, withdrawable, true);
+
+        vm.expectEmit(address(vault));
+        emit ISparkBoostedVault.Withdraw(user1, 1, withdrawable, shares);
+
+        vm.prank(user1);
+        vault.withdraw(1, recipient);
+
+        assertEq(vault.rho(),            vm.getBlockTimestamp());
+        assertEq(vault.totalShares(),    totalShares - shares);
+        assertEq(vault.totalPrincipal(), totalPrincipal - principal);
+
+        assertEq(vault.getPositionIdsOf(user1).length, 0);
+
+        position = vault.getPosition(1);
+
+        assertEq(position.principal,   0);
+        assertEq(position.shares,      0);
+        assertEq(position.depositTime, 0);
+    }
+
     /**********************************************************************************************/
     /*** withdraw partial Tests                                                                 ***/
     /**********************************************************************************************/
@@ -990,11 +1148,14 @@ contract SparkBoostedVault_UnitTests is Test {
         uint256 principal = 100_000e6;
         uint256 shares    = 100_000e6;
 
-        vault.__setPosition(1, ISparkBoostedVault.Position({
-            principal   : principal,
-            shares      : shares,
-            depositTime : uint64(vm.getBlockTimestamp())
-        }));
+        vault.__setPosition(
+            1,
+            ISparkBoostedVault.Position({
+                principal   : principal,
+                shares      : shares,
+                depositTime : uint64(vm.getBlockTimestamp())
+            })
+        );
 
         vault.__addPositionId(user1, 1);
         vault.__setTotalShares(shares);
@@ -1019,11 +1180,14 @@ contract SparkBoostedVault_UnitTests is Test {
     }
 
     function test_withdraw_partial_notOwner() external {
-        vault.__setPosition(1, ISparkBoostedVault.Position({
-            principal   : 100_000e6,
-            shares      : 100_000e6,
-            depositTime : uint64(vm.getBlockTimestamp())
-        }));
+        vault.__setPosition(
+            1,
+            ISparkBoostedVault.Position({
+                principal   : 100_000e6,
+                shares      : 100_000e6,
+                depositTime : uint64(vm.getBlockTimestamp())
+            })
+        );
 
         vm.expectRevert(ISparkBoostedVault.NotPositionOwner.selector);
         vm.prank(user1);
@@ -1031,11 +1195,14 @@ contract SparkBoostedVault_UnitTests is Test {
     }
 
     function test_withdraw_partial_zeroWithdrawal() external {
-        vault.__setPosition(1, ISparkBoostedVault.Position({
-            principal   : 100_000e6,
-            shares      : 100_000e6,
-            depositTime : uint64(vm.getBlockTimestamp())
-        }));
+        vault.__setPosition(
+            1,
+            ISparkBoostedVault.Position({
+                principal   : 100_000e6,
+                shares      : 100_000e6,
+                depositTime : uint64(vm.getBlockTimestamp())
+            })
+        );
 
         vault.__addPositionId(user1, 1);
 
@@ -1048,11 +1215,14 @@ contract SparkBoostedVault_UnitTests is Test {
         uint256 principal = 100_000e6;
         uint256 shares    = 100_000e6;
 
-        vault.__setPosition(1, ISparkBoostedVault.Position({
-            principal   : principal,
-            shares      : shares,
-            depositTime : uint64(vm.getBlockTimestamp() - CLIFF + 1)
-        }));
+        vault.__setPosition(
+            1,
+            ISparkBoostedVault.Position({
+                principal   : principal,
+                shares      : shares,
+                depositTime : uint64(vm.getBlockTimestamp())
+            })
+        );
 
         vault.__addPositionId(user1, 1);
         vault.__setTotalShares(shares);
@@ -1082,11 +1252,14 @@ contract SparkBoostedVault_UnitTests is Test {
 
         uint64 depositTime = uint64(vm.getBlockTimestamp() - CLIFF + 1);
 
-        vault.__setPosition(1, ISparkBoostedVault.Position({
-            principal   : principal,
-            shares      : shares,
-            depositTime : depositTime
-        }));
+        vault.__setPosition(
+            1,
+            ISparkBoostedVault.Position({
+                principal   : principal,
+                shares      : shares,
+                depositTime : depositTime
+            })
+        );
 
         vault.__addPositionId(user1, 1);
         vault.__setTotalShares(shares);
@@ -1147,11 +1320,14 @@ contract SparkBoostedVault_UnitTests is Test {
 
         uint64 depositTime = uint64(vm.getBlockTimestamp() - CLIFF);
 
-        vault.__setPosition(1, ISparkBoostedVault.Position({
-            principal   : principal,
-            shares      : shares,
-            depositTime : depositTime
-        }));
+        vault.__setPosition(
+            1,
+            ISparkBoostedVault.Position({
+                principal   : principal,
+                shares      : shares,
+                depositTime : depositTime
+            })
+        );
 
         vault.__addPositionId(user1, 1);
         vault.__setTotalShares(shares);
@@ -1180,6 +1356,9 @@ contract SparkBoostedVault_UnitTests is Test {
         uint256 multiplier  = (uint256(CLIFF) * CLIFF * RAY) / (uint256(TERM) * TERM);
         uint256 yield       = ((principalPortion * chi) / RAY) - principalPortion;
         uint256 vestedYield = (yield * multiplier) / RAY;
+
+        assertEq(yield,       4_000e6);
+        assertEq(vestedYield, 243.197598e6);
 
         _expectAndMockBalanceOf(asset, address(vault), 1_000_000e6);
         _expectAndMockTransfer(asset, recipient, principalPortion + vestedYield, true);
@@ -1216,11 +1395,14 @@ contract SparkBoostedVault_UnitTests is Test {
 
         uint64 depositTime = uint64(vm.getBlockTimestamp() - (TERM / 2));
 
-        vault.__setPosition(1, ISparkBoostedVault.Position({
-            principal   : principal,
-            shares      : shares,
-            depositTime : depositTime
-        }));
+        vault.__setPosition(
+            1,
+            ISparkBoostedVault.Position({
+                principal   : principal,
+                shares      : shares,
+                depositTime : depositTime
+            })
+        );
 
         vault.__addPositionId(user1, 1);
         vault.__setTotalShares(shares);
@@ -1249,6 +1431,9 @@ contract SparkBoostedVault_UnitTests is Test {
         uint256 multiplier  = (uint256(TERM / 2) * (TERM / 2) * RAY) / (uint256(TERM) * TERM);
         uint256 yield       = ((principalPortion * chi) / RAY) - principalPortion;
         uint256 vestedYield = (yield * multiplier) / RAY;
+
+        assertEq(yield,       4_000e6);
+        assertEq(vestedYield, 1_000e6);
 
         _expectAndMockBalanceOf(asset, address(vault), 1_000_000e6);
         _expectAndMockTransfer(asset, recipient, principalPortion + vestedYield, true);
@@ -1285,11 +1470,14 @@ contract SparkBoostedVault_UnitTests is Test {
 
         uint64 depositTime = uint64(vm.getBlockTimestamp() - TERM);
 
-        vault.__setPosition(1, ISparkBoostedVault.Position({
-            principal   : principal,
-            shares      : shares,
-            depositTime : depositTime
-        }));
+        vault.__setPosition(
+            1,
+            ISparkBoostedVault.Position({
+                principal   : principal,
+                shares      : shares,
+                depositTime : depositTime
+            })
+        );
 
         vault.__addPositionId(user1, 1);
         vault.__setTotalShares(shares);
@@ -1316,6 +1504,8 @@ contract SparkBoostedVault_UnitTests is Test {
         uint256 sharePortion     = 40_000e6;
 
         uint256 vestedYield = ((principalPortion * chi) / RAY) - principalPortion;
+
+        assertEq(vestedYield, 4_000e6);
 
         _expectAndMockBalanceOf(asset, address(vault), 1_000_000e6);
         _expectAndMockTransfer(asset, recipient, principalPortion + vestedYield, true);
@@ -1352,11 +1542,14 @@ contract SparkBoostedVault_UnitTests is Test {
 
         uint64 depositTime = uint64(vm.getBlockTimestamp() - (2 * TERM));
 
-        vault.__setPosition(1, ISparkBoostedVault.Position({
-            principal   : principal,
-            shares      : shares,
-            depositTime : depositTime
-        }));
+        vault.__setPosition(
+            1,
+            ISparkBoostedVault.Position({
+                principal   : principal,
+                shares      : shares,
+                depositTime : depositTime
+            })
+        );
 
         vault.__addPositionId(user1, 1);
         vault.__setTotalShares(shares);
@@ -1383,6 +1576,8 @@ contract SparkBoostedVault_UnitTests is Test {
         uint256 sharePortion     = 40_000e6;
 
         uint256 vestedYield = ((principalPortion * chi) / RAY) - principalPortion;
+
+        assertEq(vestedYield, 4_000e6);
 
         _expectAndMockBalanceOf(asset, address(vault), 1_000_000e6);
         _expectAndMockTransfer(asset, recipient, principalPortion + vestedYield, true);
@@ -1412,6 +1607,105 @@ contract SparkBoostedVault_UnitTests is Test {
         assertEq(position.depositTime, depositTime);
     }
 
+    function testFuzz_withdraw_partial(
+        uint256 totalShares,
+        uint256 totalPrincipal,
+        uint256 chi,
+        uint256 principal,
+        uint256 shares,
+        uint256 depositTime,
+        uint256 withdrawAmount
+    ) external {
+        totalShares     = bound(totalShares,    1_000e6,                             1_000_000_000e18);
+        totalPrincipal  = bound(totalPrincipal, 1_000e6,                             1_000_000_000e18);
+        chi             = bound(chi,            1e27,                                100e27);
+        principal       = bound(principal,      1_000e6,                             totalPrincipal);
+        shares          = bound(shares,         1_000e6,                             totalShares);
+        depositTime     = bound(depositTime,    vm.getBlockTimestamp() - (2 * TERM), vm.getBlockTimestamp());
+        withdrawAmount  = bound(withdrawAmount, 1_000e6,                             2 * principal);
+
+        vault.__setChi(uint192(chi));
+        vault.__setRho(uint64(vm.getBlockTimestamp()));
+        vault.__setTotalShares(totalShares);
+        vault.__setTotalPrincipal(totalPrincipal);
+        vault.__addPositionId(user1, 1);
+
+        vault.__setPosition(1, ISparkBoostedVault.Position({
+            principal   : principal,
+            shares      : shares,
+            depositTime : uint64(depositTime)
+        }));
+
+        assertEq(vault.rho(),            vm.getBlockTimestamp());
+        assertEq(vault.totalShares(),    totalShares);
+        assertEq(vault.totalPrincipal(), totalPrincipal);
+
+        uint256[] memory positionIds = vault.getPositionIdsOf(user1);
+
+        assertEq(positionIds.length, 1);
+        assertEq(positionIds[0],     1);
+
+        ISparkBoostedVault.Position memory position = vault.getPosition(1);
+
+        assertEq(position.principal,   principal);
+        assertEq(position.shares,      shares);
+        assertEq(position.depositTime, depositTime);
+
+        uint256 withdrawable = _getWithdrawable(depositTime, principal, shares, chi);
+
+        uint256 sharePortion     = Math.ceilDiv(shares * withdrawAmount,    withdrawable);
+        uint256 principalPortion = Math.ceilDiv(principal * withdrawAmount, withdrawable);
+
+        if (sharePortion >= shares || principalPortion >= principal) {
+            sharePortion     = shares;
+            principalPortion = principal;
+        }
+
+        if (withdrawAmount <= withdrawable) {
+            _expectAndMockBalanceOf(asset, address(vault), withdrawAmount);
+            _expectAndMockTransfer(asset, recipient, withdrawAmount, true);
+
+            vm.expectEmit(address(vault));
+            emit ISparkBoostedVault.Withdraw(user1, 1, withdrawAmount, sharePortion);
+        } else {
+            vm.expectRevert(
+                abi.encodeWithSelector(
+                    ISparkBoostedVault.InsufficientWithdrawable.selector,
+                    withdrawAmount,
+                    withdrawable
+                )
+            );
+        }
+
+        vm.prank(user1);
+        vault.withdraw(1, withdrawAmount, recipient);
+
+        if (withdrawAmount > withdrawable) return;
+
+        assertEq(vault.rho(),            vm.getBlockTimestamp());
+        assertEq(vault.totalShares(),    totalShares - sharePortion);
+        assertEq(vault.totalPrincipal(), totalPrincipal - principalPortion);
+
+        position = vault.getPosition(1);
+
+        if (sharePortion == shares) {
+            assertEq(position.principal,   0);
+            assertEq(position.shares,      0);
+            assertEq(position.depositTime, 0);
+
+            assertEq(vault.getPositionIdsOf(user1).length, 0);
+        } else {
+            assertEq(position.principal,   principal - principalPortion);
+            assertEq(position.shares,      shares    - sharePortion);
+            assertEq(position.depositTime, depositTime);
+
+            positionIds = vault.getPositionIdsOf(user1);
+
+            assertEq(positionIds.length, 1);
+            assertEq(positionIds[0],     1);
+        }
+    }
+
     /**********************************************************************************************/
     /*** vestingMultiplierOf Tests                                                              ***/
     /**********************************************************************************************/
@@ -1423,11 +1717,14 @@ contract SparkBoostedVault_UnitTests is Test {
     function test_vestingMultiplierOf_beforeCliff() external {
         uint64 depositTime = uint64(vm.getBlockTimestamp() - CLIFF + 1);
 
-        vault.__setPosition(1, ISparkBoostedVault.Position({
-            principal   : 100_000e6,
-            shares      : 100_000e6,
-            depositTime : depositTime
-        }));
+        vault.__setPosition(
+            1,
+            ISparkBoostedVault.Position({
+                principal   : 100_000e6,
+                shares      : 100_000e6,
+                depositTime : depositTime
+            })
+        );
 
         assertEq(vault.vestingMultiplierOf(1), 0);
     }
@@ -1435,39 +1732,50 @@ contract SparkBoostedVault_UnitTests is Test {
     function test_vestingMultiplierOf_atCliff() external {
         uint64 depositTime = uint64(vm.getBlockTimestamp() - CLIFF);
 
-        vault.__setPosition(1, ISparkBoostedVault.Position({
-            principal   : 100_000e6,
-            shares      : 100_000e6,
-            depositTime : depositTime
-        }));
+        vault.__setPosition(
+            1,
+            ISparkBoostedVault.Position({
+                principal   : 100_000e6,
+                shares      : 100_000e6,
+                depositTime : depositTime
+            })
+        );
 
         uint256 expected = (uint256(CLIFF) * CLIFF * RAY) / (uint256(TERM) * TERM);
 
+        assertEq(expected,                     0.060799399512103584162131732e27);
         assertEq(vault.vestingMultiplierOf(1), expected);
     }
 
     function test_vestingMultiplierOf_duringVesting() external {
         uint64 depositTime = uint64(vm.getBlockTimestamp() - (TERM / 2));
 
-        vault.__setPosition(1, ISparkBoostedVault.Position({
-            principal   : 100_000e6,
-            shares      : 100_000e6,
-            depositTime : depositTime
-        }));
+        vault.__setPosition(
+            1,
+            ISparkBoostedVault.Position({
+                principal   : 100_000e6,
+                shares      : 100_000e6,
+                depositTime : depositTime
+            })
+        );
 
         uint256 expected = (uint256(TERM / 2) * (TERM / 2) * RAY) / (uint256(TERM) * TERM);
 
+        assertEq(expected,                     0.25e27);
         assertEq(vault.vestingMultiplierOf(1), expected);
     }
 
     function test_vestingMultiplierOf_atTerm() external {
         uint64 depositTime = uint64(vm.getBlockTimestamp() - TERM);
 
-        vault.__setPosition(1, ISparkBoostedVault.Position({
-            principal   : 100_000e6,
-            shares      : 100_000e6,
-            depositTime : depositTime
-        }));
+        vault.__setPosition(
+            1,
+            ISparkBoostedVault.Position({
+                principal   : 100_000e6,
+                shares      : 100_000e6,
+                depositTime : depositTime
+            })
+        );
 
         assertEq(vault.vestingMultiplierOf(1), RAY);
     }
@@ -1475,11 +1783,14 @@ contract SparkBoostedVault_UnitTests is Test {
     function test_vestingMultiplierOf_afterTerm() external {
         uint64 depositTime = uint64(vm.getBlockTimestamp() - (2 * TERM));
 
-        vault.__setPosition(1, ISparkBoostedVault.Position({
-            principal   : 100_000e6,
-            shares      : 100_000e6,
-            depositTime : depositTime
-        }));
+        vault.__setPosition(
+            1,
+            ISparkBoostedVault.Position({
+                principal   : 100_000e6,
+                shares      : 100_000e6,
+                depositTime : depositTime
+            })
+        );
 
         assertEq(vault.vestingMultiplierOf(1), RAY);
     }
@@ -1489,11 +1800,14 @@ contract SparkBoostedVault_UnitTests is Test {
 
         uint64 depositTime = uint64(vm.getBlockTimestamp() - elapsed);
 
-        vault.__setPosition(1, ISparkBoostedVault.Position({
-            principal   : 100_000e6,
-            shares      : 100_000e6,
-            depositTime : depositTime
-        }));
+        vault.__setPosition(
+            1,
+            ISparkBoostedVault.Position({
+                principal   : 100_000e6,
+                shares      : 100_000e6,
+                depositTime : depositTime
+            })
+        );
 
         uint256 expected = (elapsed * elapsed * RAY) / (TERM * TERM);
 
@@ -1509,11 +1823,14 @@ contract SparkBoostedVault_UnitTests is Test {
     }
 
     function test_yieldOf_zeroYield() external {
-        vault.__setPosition(1, ISparkBoostedVault.Position({
-            principal   : 100_000e6,
-            shares      : 100_000e6,
-            depositTime : uint64(vm.getBlockTimestamp())
-        }));
+        vault.__setPosition(
+            1,
+            ISparkBoostedVault.Position({
+                principal   : 100_000e6,
+                shares      : 100_000e6,
+                depositTime : uint64(vm.getBlockTimestamp())
+            })
+        );
 
         vault.__setChi(uint192(RAY));
 
@@ -1521,11 +1838,14 @@ contract SparkBoostedVault_UnitTests is Test {
     }
 
     function test_yieldOf_positiveYield() external {
-        vault.__setPosition(1, ISparkBoostedVault.Position({
-            principal   : 100_000e6,
-            shares      : 100_000e6,
-            depositTime : uint64(vm.getBlockTimestamp())
-        }));
+        vault.__setPosition(
+            1,
+            ISparkBoostedVault.Position({
+                principal   : 100_000e6,
+                shares      : 100_000e6,
+                depositTime : uint64(vm.getBlockTimestamp())
+            })
+        );
 
         vault.__setChi(1.1e27);
 
@@ -1533,29 +1853,35 @@ contract SparkBoostedVault_UnitTests is Test {
     }
 
     function test_yieldOf_assetsLessThanPrincipal() external {
-        vault.__setPosition(1, ISparkBoostedVault.Position({
-            principal   : 100_000e6,
-            shares      : 90_000e6,
-            depositTime : uint64(vm.getBlockTimestamp())
-        }));
+        vault.__setPosition(
+            1,
+            ISparkBoostedVault.Position({
+                principal   : 100_000e6,
+                shares      : 90_000e6,
+                depositTime : uint64(vm.getBlockTimestamp())
+            })
+        );
 
         vault.__setChi(uint192(RAY));
 
         assertEq(vault.yieldOf(1), 0);
     }
 
-    function testFuzz_yieldOf(uint256 shares, uint256 principal, uint192 chi) external {
-        shares    = bound(shares, 0, 1e36);
-        principal = bound(principal, 0, 1e36);
-        chi       = uint192(bound(chi, RAY, 1e36));
+    function testFuzz_yieldOf(uint256 shares, uint256 principal, uint256 chi) external {
+        shares    = bound(shares,    0,   1e36);
+        principal = bound(principal, 0,   1e36);
+        chi       = bound(chi,       RAY, 1e36);
 
-        vault.__setPosition(1, ISparkBoostedVault.Position({
-            principal   : principal,
-            shares      : shares,
-            depositTime : uint64(vm.getBlockTimestamp())
-        }));
+        vault.__setPosition(
+            1,
+            ISparkBoostedVault.Position({
+                principal   : principal,
+                shares      : shares,
+                depositTime : uint64(vm.getBlockTimestamp())
+            })
+        );
 
-        vault.__setChi(chi);
+        vault.__setChi(uint192(chi));
 
         uint256 assets   = (shares * chi) / RAY;
         uint256 expected = assets > principal ? (assets - principal) : 0;
@@ -1574,11 +1900,14 @@ contract SparkBoostedVault_UnitTests is Test {
     function test_vestedYieldOf_beforeCliff() external {
         uint64 depositTime = uint64(vm.getBlockTimestamp() - CLIFF + 1);
 
-        vault.__setPosition(1, ISparkBoostedVault.Position({
-            principal   : 100_000e6,
-            shares      : 100_000e6,
-            depositTime : depositTime
-        }));
+        vault.__setPosition(
+            1,
+            ISparkBoostedVault.Position({
+                principal   : 100_000e6,
+                shares      : 100_000e6,
+                depositTime : depositTime
+            })
+        );
 
         vault.__setChi(1.1e27);
 
@@ -1592,11 +1921,14 @@ contract SparkBoostedVault_UnitTests is Test {
 
         uint64 depositTime = uint64(vm.getBlockTimestamp() - CLIFF);
 
-        vault.__setPosition(1, ISparkBoostedVault.Position({
-            principal   : principal,
-            shares      : shares,
-            depositTime : depositTime
-        }));
+        vault.__setPosition(
+            1,
+            ISparkBoostedVault.Position({
+                principal   : principal,
+                shares      : shares,
+                depositTime : depositTime
+            })
+        );
 
         vault.__setChi(chi);
 
@@ -1614,11 +1946,14 @@ contract SparkBoostedVault_UnitTests is Test {
 
         uint64 depositTime = uint64(vm.getBlockTimestamp() - (TERM / 2));
 
-        vault.__setPosition(1, ISparkBoostedVault.Position({
-            principal   : principal,
-            shares      : shares,
-            depositTime : depositTime
-        }));
+        vault.__setPosition(
+            1,
+            ISparkBoostedVault.Position({
+                principal   : principal,
+                shares      : shares,
+                depositTime : depositTime
+            })
+        );
 
         vault.__setChi(chi);
 
@@ -1636,11 +1971,14 @@ contract SparkBoostedVault_UnitTests is Test {
 
         uint64 depositTime = uint64(vm.getBlockTimestamp() - TERM);
 
-        vault.__setPosition(1, ISparkBoostedVault.Position({
-            principal   : principal,
-            shares      : shares,
-            depositTime : depositTime
-        }));
+        vault.__setPosition(
+            1,
+            ISparkBoostedVault.Position({
+                principal   : principal,
+                shares      : shares,
+                depositTime : depositTime
+            })
+        );
 
         vault.__setChi(chi);
 
@@ -1656,11 +1994,14 @@ contract SparkBoostedVault_UnitTests is Test {
 
         uint64 depositTime = uint64(vm.getBlockTimestamp() - (2 * TERM));
 
-        vault.__setPosition(1, ISparkBoostedVault.Position({
-            principal   : principal,
-            shares      : shares,
-            depositTime : depositTime
-        }));
+        vault.__setPosition(
+            1,
+            ISparkBoostedVault.Position({
+                principal   : principal,
+                shares      : shares,
+                depositTime : depositTime
+            })
+        );
 
         vault.__setChi(chi);
 
@@ -1669,21 +2010,24 @@ contract SparkBoostedVault_UnitTests is Test {
         assertEq(vault.vestedYieldOf(1), expected);
     }
 
-    function testFuzz_vestedYieldOf(uint256 elapsed, uint256 shares, uint256 principal, uint192 chi) external {
-        elapsed   = bound(elapsed, CLIFF, TERM - 1);
-        shares    = bound(shares, 0, 1e36);
-        principal = bound(principal, 0, 1e36);
-        chi       = uint192(bound(chi, RAY, 1e36));
+    function testFuzz_vestedYieldOf(uint256 elapsed, uint256 shares, uint256 principal, uint256 chi) external {
+        elapsed   = bound(elapsed,   CLIFF, TERM - 1);
+        shares    = bound(shares,    0,     1e36);
+        principal = bound(principal, 0,     1e36);
+        chi       = bound(chi,       RAY,   1e36);
 
         uint64 depositTime = uint64(vm.getBlockTimestamp() - elapsed);
 
-        vault.__setPosition(1, ISparkBoostedVault.Position({
-            principal   : principal,
-            shares      : shares,
-            depositTime : depositTime
-        }));
+        vault.__setPosition(
+            1,
+            ISparkBoostedVault.Position({
+                principal   : principal,
+                shares      : shares,
+                depositTime : depositTime
+            })
+        );
 
-        vault.__setChi(chi);
+        vault.__setChi(uint192(chi));
 
         uint256 assets     = (shares * chi) / RAY;
         uint256 yield      = assets > principal ? (assets - principal) : 0;
@@ -1708,11 +2052,14 @@ contract SparkBoostedVault_UnitTests is Test {
 
         uint64 depositTime = uint64(vm.getBlockTimestamp() - CLIFF + 1);
 
-        vault.__setPosition(1, ISparkBoostedVault.Position({
-            principal   : principal,
-            shares      : shares,
-            depositTime : depositTime
-        }));
+        vault.__setPosition(
+            1,
+            ISparkBoostedVault.Position({
+                principal   : principal,
+                shares      : shares,
+                depositTime : depositTime
+            })
+        );
 
         vault.__setChi(chi);
 
@@ -1728,11 +2075,14 @@ contract SparkBoostedVault_UnitTests is Test {
 
         uint64 depositTime = uint64(vm.getBlockTimestamp() - CLIFF);
 
-        vault.__setPosition(1, ISparkBoostedVault.Position({
-            principal   : principal,
-            shares      : shares,
-            depositTime : depositTime
-        }));
+        vault.__setPosition(
+            1,
+            ISparkBoostedVault.Position({
+                principal   : principal,
+                shares      : shares,
+                depositTime : depositTime
+            })
+        );
 
         vault.__setChi(chi);
 
@@ -1751,11 +2101,14 @@ contract SparkBoostedVault_UnitTests is Test {
 
         uint64 depositTime = uint64(vm.getBlockTimestamp() - (TERM / 2));
 
-        vault.__setPosition(1, ISparkBoostedVault.Position({
-            principal   : principal,
-            shares      : shares,
-            depositTime : depositTime
-        }));
+        vault.__setPosition(
+            1,
+            ISparkBoostedVault.Position({
+                principal   : principal,
+                shares      : shares,
+                depositTime : depositTime
+            })
+        );
 
         vault.__setChi(chi);
 
@@ -1770,11 +2123,14 @@ contract SparkBoostedVault_UnitTests is Test {
     function test_unvestedYieldOf_atTerm() external {
         uint64 depositTime = uint64(vm.getBlockTimestamp() - TERM);
 
-        vault.__setPosition(1, ISparkBoostedVault.Position({
-            principal   : 100_000e6,
-            shares      : 100_000e6,
-            depositTime : depositTime
-        }));
+        vault.__setPosition(
+            1,
+            ISparkBoostedVault.Position({
+                principal   : 100_000e6,
+                shares      : 100_000e6,
+                depositTime : depositTime
+            })
+        );
 
         vault.__setChi(1.1e27);
 
@@ -1784,32 +2140,38 @@ contract SparkBoostedVault_UnitTests is Test {
     function test_unvestedYieldOf_afterTerm() external {
         uint64 depositTime = uint64(vm.getBlockTimestamp() - (2 * TERM));
 
-        vault.__setPosition(1, ISparkBoostedVault.Position({
-            principal   : 100_000e6,
-            shares      : 100_000e6,
-            depositTime : depositTime
-        }));
+        vault.__setPosition(
+            1,
+            ISparkBoostedVault.Position({
+                principal   : 100_000e6,
+                shares      : 100_000e6,
+                depositTime : depositTime
+            })
+        );
 
         vault.__setChi(1.1e27);
 
         assertEq(vault.unvestedYieldOf(1), 0);
     }
 
-    function testFuzz_unvestedYieldOf(uint256 elapsed, uint256 shares, uint256 principal, uint192 chi) external {
-        elapsed = bound(elapsed, CLIFF, TERM - 1);
-        shares = bound(shares, 0, 1e36);
-        principal = bound(principal, 0, 1e36);
-        chi = uint192(bound(chi, RAY, 1e36));
+    function testFuzz_unvestedYieldOf(uint256 elapsed, uint256 shares, uint256 principal, uint256 chi) external {
+        elapsed   = bound(elapsed,   CLIFF, TERM - 1);
+        shares    = bound(shares,    0,     1e36);
+        principal = bound(principal, 0,     1e36);
+        chi       = bound(chi,       RAY,   1e36);
 
         uint64 depositTime = uint64(vm.getBlockTimestamp() - elapsed);
 
-        vault.__setPosition(1, ISparkBoostedVault.Position({
-            principal   : principal,
-            shares      : shares,
-            depositTime : depositTime
-        }));
+        vault.__setPosition(
+            1,
+            ISparkBoostedVault.Position({
+                principal   : principal,
+                shares      : shares,
+                depositTime : depositTime
+            })
+        );
 
-        vault.__setChi(chi);
+        vault.__setChi(uint192(chi));
 
         uint256 assets      = (shares * chi) / RAY;
         uint256 yield       = assets > principal ? (assets - principal) : 0;
@@ -1851,7 +2213,7 @@ contract SparkBoostedVault_UnitTests is Test {
         assertEq(vault.chi(), uint192(RAY));
 
         uint256 expectedNewChi = 1.039999999999999999955174055e27;
-        uint256 expectedDiff = ((100_000e6 * expectedNewChi) / RAY) - 100_000e6;
+        uint256 expectedDiff   = ((100_000e6 * expectedNewChi) / RAY) - 100_000e6;
 
         vm.expectEmit(address(vault));
         emit ISparkBoostedVault.Drip(expectedNewChi, expectedDiff);
@@ -1862,15 +2224,15 @@ contract SparkBoostedVault_UnitTests is Test {
         assertEq(vault.rho(), vm.getBlockTimestamp());
     }
 
-    function testFuzz_drip(uint256 elapsed, uint256 shares, uint192 chi, uint256 vsr) external {
-        elapsed = bound(elapsed, 1, 365 days);
-        shares  = bound(shares, 0, 1e36);
-        chi     = uint192(bound(chi, RAY, 1e36));
-        vsr     = bound(vsr, RAY, FOUR_PCT_VSR);
+    function testFuzz_drip(uint256 elapsed, uint256 shares, uint256 chi, uint256 vsr) external {
+        elapsed = bound(elapsed, 1,   365 days);
+        shares  = bound(shares,  0,   1e36);
+        chi     = bound(chi,     RAY, 1e36);
+        vsr     = bound(vsr,     RAY, FOUR_PCT_VSR);
 
         uint64 pastTimestamp = uint64(vm.getBlockTimestamp() - elapsed);
 
-        vault.__setChi(chi);
+        vault.__setChi(uint192(chi));
         vault.__setRho(pastTimestamp);
         vault.__setVsr(vsr);
         vault.__setTotalShares(shares);
@@ -1878,8 +2240,8 @@ contract SparkBoostedVault_UnitTests is Test {
         assertEq(vault.chi(), chi);
         assertEq(vault.rho(), pastTimestamp);
 
-        uint256 expectedNewChi = (vault.nowChi());
-        uint256 expectedDiff = ((shares * expectedNewChi) / RAY) - ((shares * chi) / RAY);
+        uint256 expectedNewChi = vault.nowChi();
+        uint256 expectedDiff   = ((shares * expectedNewChi) / RAY) - ((shares * chi) / RAY);
 
         vm.expectEmit(address(vault));
         emit ISparkBoostedVault.Drip(expectedNewChi, expectedDiff);
@@ -1951,9 +2313,9 @@ contract SparkBoostedVault_UnitTests is Test {
     function test_getter_maxVsr() external {
         assertEq(vault.maxVsr(), RAY);
 
-        vault.__setMaxVsr(.05e27);
+        vault.__setMaxVsr(0.05e27);
 
-        assertEq(vault.maxVsr(), .05e27);
+        assertEq(vault.maxVsr(), 0.05e27);
     }
 
     function test_getter_minVsr() external {
@@ -2039,7 +2401,10 @@ contract SparkBoostedVault_UnitTests is Test {
             depositTime : 1_000_000
         });
 
-        vault.__setPosition(42, expected);
+        vault.__setPosition(
+            42,
+            expected
+        );
 
         ISparkBoostedVault.Position memory actual = vault.getPosition(42);
 
@@ -2064,32 +2429,32 @@ contract SparkBoostedVault_UnitTests is Test {
         ids = vault.getPositionIdsOf(user1);
 
         assertEq(ids.length, 1);
-        assertEq(ids[0], 10);
+        assertEq(ids[0],     10);
 
         vault.__addPositionId(user1, 20);
 
         ids = vault.getPositionIdsOf(user1);
 
         assertEq(ids.length, 2);
-        assertEq(ids[0], 10);
-        assertEq(ids[1], 20);
+        assertEq(ids[0],     10);
+        assertEq(ids[1],     20);
 
         vault.__addPositionId(user1, 30);
 
         ids = vault.getPositionIdsOf(user1);
 
         assertEq(ids.length, 3);
-        assertEq(ids[0], 10);
-        assertEq(ids[1], 20);
-        assertEq(ids[2], 30);
+        assertEq(ids[0],     10);
+        assertEq(ids[1],     20);
+        assertEq(ids[2],     30);
 
         vault.__removePositionId(user1, 20);
 
         ids = vault.getPositionIdsOf(user1);
 
         assertEq(ids.length, 2);
-        assertEq(ids[0], 10);
-        assertEq(ids[1], 30);
+        assertEq(ids[0],     10);
+        assertEq(ids[1],     30);
     }
 
     /**********************************************************************************************/
@@ -2119,7 +2484,10 @@ contract SparkBoostedVault_UnitTests is Test {
             depositTime : 3_000_000
         });
 
-        vault.__setPosition(10, position1);
+        vault.__setPosition(
+            10,
+            position1
+        );
         vault.__addPositionId(user1, 10);
 
         positions = vault.getPositionsOf(user1);
@@ -2130,7 +2498,10 @@ contract SparkBoostedVault_UnitTests is Test {
         assertEq(positions[0].shares,      position1.shares);
         assertEq(positions[0].depositTime, position1.depositTime);
 
-        vault.__setPosition(20, position2);
+        vault.__setPosition(
+            20,
+            position2
+        );
         vault.__addPositionId(user1, 20);
 
         positions = vault.getPositionsOf(user1);
@@ -2145,7 +2516,10 @@ contract SparkBoostedVault_UnitTests is Test {
         assertEq(positions[1].shares,      position2.shares);
         assertEq(positions[1].depositTime, position2.depositTime);
 
-        vault.__setPosition(30, position3);
+        vault.__setPosition(
+            30,
+            position3
+        );
         vault.__addPositionId(user1, 30);
 
         positions = vault.getPositionsOf(user1);
@@ -2184,11 +2558,14 @@ contract SparkBoostedVault_UnitTests is Test {
     /**********************************************************************************************/
 
     function test_maxWithdrawOf() external {
-        vault.__setPosition(1, ISparkBoostedVault.Position({
-            principal   : 100_000e6,
-            shares      : 100_000e6,
-            depositTime : uint64(vm.getBlockTimestamp() - TERM)
-        }));
+        vault.__setPosition(
+            1,
+            ISparkBoostedVault.Position({
+                principal   : 100_000e6,
+                shares      : 100_000e6,
+                depositTime : uint64(vm.getBlockTimestamp() - TERM)
+            })
+        );
 
         vault.__setChi(1.1e27);
 
@@ -2216,11 +2593,14 @@ contract SparkBoostedVault_UnitTests is Test {
     function test_withdrawableOf_beforeCliff() external {
         uint64 depositTime = uint64(vm.getBlockTimestamp() - CLIFF + 1);
 
-        vault.__setPosition(1, ISparkBoostedVault.Position({
-            principal   : 100_000e6,
-            shares      : 100_000e6,
-            depositTime : depositTime
-        }));
+        vault.__setPosition(
+            1,
+            ISparkBoostedVault.Position({
+                principal   : 100_000e6,
+                shares      : 100_000e6,
+                depositTime : depositTime
+            })
+        );
 
         vault.__setChi(1.1e27);
 
@@ -2234,11 +2614,14 @@ contract SparkBoostedVault_UnitTests is Test {
 
         uint64 depositTime = uint64(vm.getBlockTimestamp() - CLIFF);
 
-        vault.__setPosition(1, ISparkBoostedVault.Position({
-            principal   : principal,
-            shares      : shares,
-            depositTime : depositTime
-        }));
+        vault.__setPosition(
+            1,
+            ISparkBoostedVault.Position({
+                principal   : principal,
+                shares      : shares,
+                depositTime : depositTime
+            })
+        );
 
         vault.__setChi(chi);
 
@@ -2257,11 +2640,14 @@ contract SparkBoostedVault_UnitTests is Test {
 
         uint64 depositTime = uint64(vm.getBlockTimestamp() - (TERM / 2));
 
-        vault.__setPosition(1, ISparkBoostedVault.Position({
-            principal   : principal,
-            shares      : shares,
-            depositTime : depositTime
-        }));
+        vault.__setPosition(
+            1,
+            ISparkBoostedVault.Position({
+                principal   : principal,
+                shares      : shares,
+                depositTime : depositTime
+            })
+        );
 
         vault.__setChi(chi);
 
@@ -2280,11 +2666,14 @@ contract SparkBoostedVault_UnitTests is Test {
 
         uint64 depositTime = uint64(vm.getBlockTimestamp() - TERM);
 
-        vault.__setPosition(1, ISparkBoostedVault.Position({
-            principal   : principal,
-            shares      : shares,
-            depositTime : depositTime
-        }));
+        vault.__setPosition(
+            1,
+            ISparkBoostedVault.Position({
+                principal   : principal,
+                shares      : shares,
+                depositTime : depositTime
+            })
+        );
 
         vault.__setChi(chi);
 
@@ -2301,11 +2690,14 @@ contract SparkBoostedVault_UnitTests is Test {
 
         uint64 depositTime = uint64(vm.getBlockTimestamp() - (2 * TERM));
 
-        vault.__setPosition(1, ISparkBoostedVault.Position({
-            principal   : principal,
-            shares      : shares,
-            depositTime : depositTime
-        }));
+        vault.__setPosition(
+            1,
+            ISparkBoostedVault.Position({
+                principal   : principal,
+                shares      : shares,
+                depositTime : depositTime
+            })
+        );
 
         vault.__setChi(chi);
 
@@ -2315,21 +2707,24 @@ contract SparkBoostedVault_UnitTests is Test {
         assertEq(vault.withdrawableOf(1), expected);
     }
 
-    function testFuzz_withdrawableOf(uint256 elapsed, uint256 shares, uint256 principal, uint192 chi) external {
-        elapsed   = bound(elapsed, CLIFF, TERM - 1);
-        shares    = bound(shares, 0, 1e36);
-        principal = bound(principal, 0, 1e36);
-        chi       = uint192(bound(chi, RAY, 1e36));
+    function testFuzz_withdrawableOf(uint256 elapsed, uint256 shares, uint256 principal, uint256 chi) external {
+        elapsed   = bound(elapsed,   CLIFF, TERM - 1);
+        shares    = bound(shares,    0,     1e36);
+        principal = bound(principal, 0,     1e36);
+        chi       = bound(chi,       RAY,   1e36);
 
         uint64 depositTime = uint64(vm.getBlockTimestamp() - elapsed);
 
-        vault.__setPosition(1, ISparkBoostedVault.Position({
-            principal   : principal,
-            shares      : shares,
-            depositTime : depositTime
-        }));
+        vault.__setPosition(
+            1,
+            ISparkBoostedVault.Position({
+                principal   : principal,
+                shares      : shares,
+                depositTime : depositTime
+            })
+        );
 
-        vault.__setChi(chi);
+        vault.__setChi(uint192(chi));
 
         uint256 assets      = (shares * chi) / RAY;
         uint256 yield       = assets > principal ? (assets - principal) : 0;
@@ -2354,7 +2749,7 @@ contract SparkBoostedVault_UnitTests is Test {
     }
 
     /**********************************************************************************************/
-    /*** upgradeToAnCall Tests                                                                  ***/
+    /*** upgradeToAndCall Tests                                                                 ***/
     /**********************************************************************************************/
 
     function test_upgradeToAndCall_notAdmin() external {
@@ -2405,6 +2800,30 @@ contract SparkBoostedVault_UnitTests is Test {
         vm.expectRevert(
             abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, account, role)
         );
+    }
+
+    function _safeSub(uint256 a, uint256 b) internal pure returns (uint256) {
+        return a > b ? a - b : 0;
+    }
+
+    function _getWithdrawable(
+        uint256 depositTime,
+        uint256 principal,
+        uint256 shares,
+        uint256 chi
+    ) internal view returns (uint256 withdrawable) {
+        uint256 elapsed = vm.getBlockTimestamp() - depositTime;
+
+        uint256 multiplier =
+            elapsed < CLIFF
+                ? 0
+                : elapsed >= TERM
+                    ? RAY
+                    : (elapsed * elapsed * RAY) / (uint256(TERM) * TERM);
+
+        uint256 vestedYield  = (_safeSub((shares * chi) / RAY, principal) * multiplier) / RAY;
+
+        return principal + vestedYield;
     }
 
 }
