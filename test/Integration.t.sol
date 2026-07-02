@@ -11,14 +11,15 @@ import { ISparkBoostedVault } from "../src/ISparkBoostedVault.sol";
 
 contract SparkBoostedVaultIntegrationTests is Test {
 
-    uint256 internal constant RAY          = 1e27;
-    uint256 internal constant ONE_PCT_VSR  = 1.000000000315522921573372069e27;
-    uint256 internal constant FOUR_PCT_VSR = 1.000000001243680656318820312e27;
-    uint256 internal constant TEN_PCT_VSR  = 1.000000003022265980097387650e27;
-    uint256 internal constant MAX_VSR      = 1.000000021979553151239153027e27;
+    uint256 internal constant RAY           = 1e27;
+    uint256 internal constant ONE_PCT_VSR   = 1.000000000315522921573372069e27;
+    uint256 internal constant FOUR_PCT_VSR  = 1.000000001243680656318820312e27;
+    uint256 internal constant EIGHT_PCT_VSR = 1.000000002440418608258400030e27;
+    uint256 internal constant TEN_PCT_VSR   = 1.000000003022265980097387650e27;
+    uint256 internal constant MAX_VSR       = 1.000000021979553151239153027e27;
 
-    uint64 internal constant TERM  = 365 days;
-    uint64 internal constant CLIFF = 90 days;
+    uint64 internal constant TERM  = 4 * 365 days;
+    uint64 internal constant CLIFF = 365 days;
 
     address internal admin  = makeAddr("admin");
     address internal setter = makeAddr("setter");
@@ -86,6 +87,224 @@ contract SparkBoostedVaultIntegrationTests is Test {
     /**********************************************************************************************/
     /*** Single user e2e tests                                                                  ***/
     /**********************************************************************************************/
+
+    function test_e2e_vsrIncreased() external {
+        uint256 startingTimestamp = block.timestamp;
+
+        _setVsr(FOUR_PCT_VSR);
+
+        uint256 positionId = _deposit(user1, 1_000_000e6);
+
+        _assertAccounting({
+            positionId          : positionId,
+            expectedFullYield   : 0,
+            expectedVestedYield : 0,
+            expectedMultiplier  : 0
+        });
+
+        vm.warp(startingTimestamp + CLIFF);
+
+        _assertAccounting({
+            positionId          : positionId,
+            expectedFullYield   : 39_999.999999e6,  // 4%
+            expectedVestedYield : 2499.999999e6,    // 1/16th of the full yield
+            expectedMultiplier  : 0.0625e27         // 1 / (4^2) = 0.0625
+        });
+
+        _setVsr(EIGHT_PCT_VSR);
+
+        _assertAccounting({
+            positionId          : positionId,
+            expectedFullYield   : 39_999.999999e6,  // 4%
+            expectedVestedYield : 2499.999999e6,    // 1/16th of the full yield
+            expectedMultiplier  : 0.0625e27         // 1 / (4^2) = 0.0625
+        });
+
+        vm.warp(startingTimestamp + TERM / 2);
+
+        _assertAccounting({
+            positionId          : positionId,
+            expectedFullYield   : 123_199.999999e6,
+            expectedVestedYield : 30_799.999999e6,  // 1/4 of full yield
+            expectedMultiplier  : 0.25e27           // 1 / (2^2) = 0.25
+        });
+    }
+
+    function test_e2e_cliffDecreased() external {
+        uint256 startingTimestamp = block.timestamp;
+
+        uint256 positionId = _deposit(user1, 1_000_000e6);
+
+        _setVsr(FOUR_PCT_VSR);
+
+        _assertAccounting({
+            positionId          : positionId,
+            expectedFullYield   : 0,
+            expectedVestedYield : 0,
+            expectedMultiplier  : 0
+        });
+
+        vm.warp(startingTimestamp + CLIFF);
+
+        _assertAccounting({
+            positionId          : positionId,
+            expectedFullYield   : 39_999.999999e6,  // 4%
+            expectedVestedYield : 2499.999999e6,    // 1/16th of the full yield
+            expectedMultiplier  : 0.0625e27         // 1 / (4^2) = 0.0625
+        });
+
+        vm.prank(admin);
+        vault.setCliff(0);
+
+        _assertAccounting({
+            positionId          : positionId,
+            expectedFullYield   : 39_999.999999e6, // 4%
+            expectedVestedYield : 2499.999999e6,   // 1/16th of the full yield
+            expectedMultiplier  : 0.0625e27        // 1 / (4^2) = 0.0625
+        });
+
+        vm.warp(startingTimestamp + TERM / 2);
+
+        _assertAccounting({
+            positionId          : positionId,
+            expectedFullYield   : 81_599.999999e6,  // 1.04 * 1.04 = 1.0816
+            expectedVestedYield : 20_399.999999e6,  // 1/4 of full yield
+            expectedMultiplier  : 0.25e27           // 1 / (2^2) = 0.25
+        });
+    }
+
+    function test_e2e_cliffIncreased() external {
+        uint256 startingTimestamp = block.timestamp;
+
+        uint256 positionId = _deposit(user1, 1_000_000e6);
+
+        _setVsr(FOUR_PCT_VSR);
+
+        _assertAccounting({
+            positionId          : positionId,
+            expectedFullYield   : 0,
+            expectedVestedYield : 0,
+            expectedMultiplier  : 0
+        });
+
+        vm.warp(startingTimestamp + CLIFF);
+
+        _assertAccounting({
+            positionId          : positionId,
+            expectedFullYield   : 39_999.999999e6,  // 4%
+            expectedVestedYield : 2499.999999e6,    // 1/16th of the full yield
+            expectedMultiplier  : 0.0625e27         // 1 / (4^2) = 0.0625
+        });
+
+        vm.prank(admin);
+        vault.setCliff(2 * 365 days);
+
+        _assertAccounting({
+            positionId          : positionId,
+            expectedFullYield   : 39_999.999999e6,  // 4%
+            expectedVestedYield : 0,
+            expectedMultiplier  : 0
+        });
+
+        vm.warp(startingTimestamp + TERM / 2);
+
+        _assertAccounting({
+            positionId          : positionId,
+            expectedFullYield   : 81_599.999999e6,  // 1.04 * 1.04 = 1.0816
+            expectedVestedYield : 20_399.999999e6,  // 1/4 of full yield
+            expectedMultiplier  : 0.25e27           // 1 / (2^2) = 0.25
+        });
+    }
+
+    function test_e2e_termDecreased() external {
+        uint256 startingTimestamp = block.timestamp;
+
+        uint256 positionId = _deposit(user1, 1_000_000e6);
+
+        _setVsr(FOUR_PCT_VSR);
+
+        _assertAccounting({
+            positionId          : positionId,
+            expectedFullYield   : 0,
+            expectedVestedYield : 0,
+            expectedMultiplier  : 0
+        });
+
+        vm.warp(startingTimestamp + CLIFF);
+
+        _assertAccounting({
+            positionId          : positionId,
+            expectedFullYield   : 39_999.999999e6,  // 4%
+            expectedVestedYield : 2499.999999e6,    // 1/16th of the full yield
+            expectedMultiplier  : 0.0625e27         // 1 / (4^2) = 0.0625
+        });
+
+        uint64 newTerm = 2 * 365 days;
+
+        vm.prank(admin);
+        vault.setTerm(newTerm);
+
+        _assertAccounting({
+            positionId          : positionId,
+            expectedFullYield   : 39_999.999999e6,  // 4%
+            expectedVestedYield : 9_999.999999e6,   // 1/4th of the full yield
+            expectedMultiplier  : 0.25e27           // 1 / (2^2) = 0.25
+        });
+
+        vm.warp(startingTimestamp + newTerm);  // 2 years
+
+        _assertAccounting({
+            positionId          : positionId,
+            expectedFullYield   : 81_599.999999e6,  // 1.04 * 1.04 = 1.0816
+            expectedVestedYield : 81_599.999999e6,  // Full yield
+            expectedMultiplier  : RAY
+        });
+    }
+
+    function test_e2e_termIncreased() external {
+        uint256 startingTimestamp = block.timestamp;
+
+        uint256 positionId = _deposit(user1, 1_000_000e6);
+
+        _setVsr(FOUR_PCT_VSR);
+
+        _assertAccounting({
+            positionId          : positionId,
+            expectedFullYield   : 0,
+            expectedVestedYield : 0,
+            expectedMultiplier  : 0
+        });
+
+        vm.warp(startingTimestamp + CLIFF);
+
+        _assertAccounting({
+            positionId          : positionId,
+            expectedFullYield   : 39_999.999999e6,  // 4%
+            expectedVestedYield : 2499.999999e6,    // 1/16th of the full yield
+            expectedMultiplier  : 0.0625e27         // 1 / (4^2) = 0.0625
+        });
+
+        uint64 newTerm = 8 * 365 days;
+
+        vm.prank(admin);
+        vault.setTerm(newTerm);
+
+        _assertAccounting({
+            positionId          : positionId,
+            expectedFullYield   : 39_999.999999e6,  // 4%
+            expectedVestedYield : 624.999999e6,     // 1/64th of the full yield
+            expectedMultiplier  : 0.015625e27       // 1 / (8^2) = 0.015625
+        });
+
+        vm.warp(startingTimestamp + newTerm / 2);  // 4 years
+
+        _assertAccounting({
+            positionId          : positionId,
+            expectedFullYield   : 169_858.559999e6,  // 1.04^4
+            expectedVestedYield : 42_464.639999e6,   // 1/4 of full yield
+            expectedMultiplier  : 0.25e27            // 1 / (2^2) = 0.25
+        });
+    }
 
     function test_e2e_singleUser_withdrawFullTerm() external {
         uint256 principal = 100_000e6;
@@ -346,6 +565,23 @@ contract SparkBoostedVaultIntegrationTests is Test {
 
         assertEq(vault.totalPrincipal(), 0);
         assertEq(vault.maxLiability(),   0);
+    }
+
+    /**********************************************************************************************/
+    /*** Helper Functions                                                                       ***/
+    /**********************************************************************************************/
+
+    function _assertAccounting(
+        uint256 positionId,
+        uint256 expectedFullYield,
+        uint256 expectedVestedYield,
+        uint256 expectedMultiplier
+    )
+        internal view
+    {
+        assertEq(vault.yieldOf(positionId),             expectedFullYield);
+        assertEq(vault.vestedYieldOf(positionId),       expectedVestedYield);
+        assertEq(vault.vestingMultiplierOf(positionId), expectedMultiplier);
     }
 
 }
