@@ -2,7 +2,7 @@
 
 ## Overview
 
-SparkBoostedVault is a per-user vesting variant of [SparkVault](https://github.com/sparkdotfi/spark-vaults-v2/blob/v1.0.1/src/SparkVault.sol). Each user's yield is gated by a vesting curve defined by two initialization-set durations: **`cliff`** and **`term`**. Principal is always withdrawable; yield is multiplied by a curve that is 0 before `cliff` and then a **quadratic ease-in** `(elapsed/term)²` from 0 to 1 over the `[0, term]` window (with the pre-cliff portion zeroed out — a jump at cliff). Because the ramp is quadratic and slow at the start, early exits forfeit disproportionately more yield than they would under a linear curve.
+SparkBoostedVault is a per-user vesting variant of [SparkVault](https://github.com/sparkdotfi/spark-vaults-v2/blob/v1.0.1/src/SparkVault.sol). Each user's yield is gated by a vesting curve defined by two duration parameters: **`cliff`** and **`term`**. These parameters are initialized during setup but can be changed at any time after initialization by an account with default admin role privileges (`DEFAULT_ADMIN_ROLE`). While changing these values will not affect the total yield of an open position, it will affect the portion that is considered vested and unvested, either favorably or unfavorably for the position holder, depending on the change. Principal is always withdrawable; yield is multiplied by a curve that is 0 before `cliff` and then a **quadratic ease-in** `(elapsed/term)²` from 0 to 1 over the `[0, term]` window (with the pre-cliff portion zeroed out — a jump at cliff). Because the ramp is quadratic and slow at the start, early exits forfeit disproportionately more yield than they would under a linear curve.
 
 **Positions have unique IDs and are tracked per user:**
 
@@ -56,6 +56,16 @@ m(elapsed) = 1                        if elapsed >= term
 Geometrically: take the parabola `y = (elapsed/term)²`, clamp at 1 past term, and **zero it out before cliff**. The result is discontinuous — at `elapsed == cliff`, m jumps from 0 to `(cliff/term)²`. After that, m grows quadratically until elapsed reaches term.
 
 Key intuition: at half-term, only **25%** of yield is vested (vs. 50% under linear). At three-quarter term, ~56% is vested (vs. 75% linear). The bulk of the boost is concentrated in the tail near `term`, which makes the curve materially more punishing on early exits than the linear shape.
+
+### Mutability of Cliff and Term
+
+An account with `DEFAULT_ADMIN_ROLE` can change the vault's active `cliff` and `term` parameters at any time after initialization via `setCliff` and `setTerm` respectively.
+
+- **Total Yield Unaffected**: Changing these parameters has absolutely no impact on the overall interest/yield accumulated by a position (which is driven purely by the position's shares and the growth of the global accumulator `chi`).
+- **Vesting Portion Impacted**: Since the vesting multiplier `m(elapsed)` is evaluated dynamically using the _current_ `cliff` and `term` state of the vault, updating these parameters immediately recalculates the ratio of vested (`vested_yield`) to unvested (`unvested_yield`) yield for all open positions, based on their outstanding principal.
+- **Favorable / Unfavorable Outcomes**:
+    - Decreasing `cliff` or `term` shifts the curve to vest yield faster, increasing `vested_yield` (favorable for the position holder).
+    - Increasing `cliff` or `term` shifts the curve to vest yield slower or reset elapsed duration to be pre-cliff, decreasing `vested_yield` (unfavorable for the position holder).
 
 ## Derived quantities
 
@@ -184,12 +194,12 @@ Since the contract implements a multi-position model (multiple position IDs per 
 
 ## Properties summary
 
-| Property               | Mechanism                                                                                                                                                             |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Per-user vesting curve | `m = 0` if `elapsed < cliff` else `(elapsed/term)²` if `elapsed < term` else `1` (quadratic ease-in with a discontinuous jump at `cliff` from `0` to `(cliff/term)²`) |
-| Position model         | Multiple positions per address (tracked by positionId), supports partial withdraws                                                                                    |
-| Principal              | Always paid out on `withdraw()` (even before cliff)                                                                                                                   |
-| Forfeited yield        | Stays in vault, increasing surplus; `TAKER_ROLE` can withdraw assets via unrestricted `take()` balance withdrawal                                                     |
-| Identity binding       | Position owner must call `withdraw` (as `msg.sender`), but can specify any `recipient` address; `deposit` always creates a position for `msg.sender`                  |
-| Non-fungible           | No ERC20 surface; no allowance; no transfer                                                                                                                           |
-| Upgradeability         | Upgradeable — implementation uses UUPS proxy pattern; admin can upgrade                                                                                               |
+| Property               | Mechanism                                                                                                                                                                                                                                                                                                                |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Per-user vesting curve | `m = 0` if `elapsed < cliff` else `(elapsed/term)²` if `elapsed < term` else `1` (quadratic ease-in with a discontinuous jump at `cliff` from `0` to `(cliff/term)²`). The `cliff` and `term` are mutable by the admin, dynamically changing the vested/unvested portion of accrued yield without affecting total yield. |
+| Position model         | Multiple positions per address (tracked by positionId), supports partial withdraws                                                                                                                                                                                                                                       |
+| Principal              | Always paid out on `withdraw()` (even before cliff)                                                                                                                                                                                                                                                                      |
+| Forfeited yield        | Stays in vault, increasing surplus; `TAKER_ROLE` can withdraw assets via unrestricted `take()` balance withdrawal                                                                                                                                                                                                        |
+| Identity binding       | Position owner must call `withdraw` (as `msg.sender`), but can specify any `recipient` address; `deposit` always creates a position for `msg.sender`                                                                                                                                                                     |
+| Non-fungible           | No ERC20 surface; no allowance; no transfer                                                                                                                                                                                                                                                                              |
+| Upgradeability         | Upgradeable — implementation uses UUPS proxy pattern; admin can upgrade                                                                                                                                                                                                                                                  |
