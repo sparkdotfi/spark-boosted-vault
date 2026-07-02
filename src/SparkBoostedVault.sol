@@ -117,7 +117,6 @@ contract SparkBoostedVault is ISparkBoostedVault, UUPSUpgradeable, AccessControl
     {
         require(asset_ != address(0), ZeroAsset());
         require(admin_ != address(0), ZeroAdmin());
-        require(term_  != 0,          ZeroTerm());
         require(cliff_ <= term_,      CliffGreaterThanTerm(cliff_, term_));
 
         VaultStorage storage $ = _getVaultStorage();

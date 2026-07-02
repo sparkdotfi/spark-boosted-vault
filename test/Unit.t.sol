@@ -169,17 +169,6 @@ contract SparkBoostedVault_UnitTests is Test {
         );
     }
 
-    function test_initialize_invalidTerm() external {
-        vm.expectRevert(abi.encodeWithSelector(ISparkBoostedVault.ZeroTerm.selector));
-        new ERC1967Proxy(
-            implementation,
-            abi.encodeCall(
-                SparkBoostedVault.initialize,
-                (asset, admin, 0, 0)
-            )
-        );
-    }
-
     function test_initialize_invalidCliffBoundary() external {
         vm.expectRevert(
             abi.encodeWithSelector(

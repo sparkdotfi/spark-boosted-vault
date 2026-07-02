@@ -195,9 +195,6 @@ interface ISparkBoostedVault is IAccessControlEnumerable {
      */
     error ZeroPosition();
 
-    /// @notice Thrown when the vault term duration is zero.
-    error ZeroTerm();
-
     /// @notice Thrown when a withdrawal would result in zero shares or zero assets withdrawn.
     error ZeroWithdrawal();
 
