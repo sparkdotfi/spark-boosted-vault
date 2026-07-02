@@ -431,6 +431,56 @@ contract SparkBoostedVaultIntegrationTests is Test {
         assertEq(vault.maxLiability(),            0);
     }
 
+    function testFuzz_e2e_singleUser_elapsed(uint256 elapsed) external {
+        elapsed = bound(elapsed, 1, 2 * TERM);
+
+        uint256 principal = 100_000e6;
+
+        _setVsr(FOUR_PCT_VSR);
+
+        // Step 1: User 1 deposits and waits for elapsed time
+
+        uint256 positionId = _deposit(user1, principal);
+
+        // Step 2: Wait for elapsed time
+
+        skip(elapsed);
+
+        // Step 3: User withdraws completely
+
+        uint256 multiplier = vault.vestingMultiplierOf(positionId);
+        uint256 yield      = vault.yieldOf(positionId);
+
+        if (elapsed >= TERM) {
+            assertEq(multiplier, RAY);
+        } else if (elapsed >= CLIFF && elapsed < TERM) {
+            assertGt(multiplier, 0);
+            assertLt(multiplier, RAY);
+        } else {
+            assertEq(multiplier, 0);
+        }
+
+        uint256 expectedVested        = yield * multiplier / RAY;
+        uint256 expectedUnvestedYield = yield - expectedVested;
+
+        assertEq(vault.vestedYieldOf(positionId),   expectedVested);
+        assertEq(vault.unvestedYieldOf(positionId), expectedUnvestedYield);
+        assertEq(vault.withdrawableOf(positionId),  principal + expectedVested);
+
+        _fundVaultToTotalAssets();
+
+        assertEq(asset.balanceOf(user1),          0);
+        assertEq(asset.balanceOf(address(vault)), principal + yield);
+        assertEq(vault.maxLiability(),            principal + yield);
+
+        vm.prank(user1);
+        vault.withdraw(positionId, user1);
+
+        assertEq(asset.balanceOf(user1),          principal + expectedVested);
+        assertEq(asset.balanceOf(address(vault)), expectedUnvestedYield);
+        assertEq(vault.maxLiability(),            0);
+    }
+
     function test_e2e_singleUser_redepositsAfterFullExit() external {
         uint256 principal = 100_000e6;
 
