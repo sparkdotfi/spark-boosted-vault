@@ -14,6 +14,7 @@ contract SparkBoostedVaultIntegrationTests is Test {
 
     uint256 internal constant RAY           = 1e27;
     uint256 internal constant ONE_PCT_VSR   = 1.000000000315522921573372069e27;
+    uint256 internal constant TWO_PCT_VSR   = 1.000000000627937192491029810e27;
     uint256 internal constant FOUR_PCT_VSR  = 1.000000001243680656318820312e27;
     uint256 internal constant EIGHT_PCT_VSR = 1.000000002440418608258400030e27;
     uint256 internal constant TEN_PCT_VSR   = 1.000000003022265980097387650e27;
@@ -125,8 +126,50 @@ contract SparkBoostedVaultIntegrationTests is Test {
 
         _assertAccounting({
             positionId          : positionId,
-            expectedFullYield   : 123_199.999999e6,
-            expectedVestedYield : 30_799.999999e6,  // 1/4 of full yield
+            expectedFullYield   : 123_199.999999e6,  // 1.04 * 1.08 = 1.1232
+            expectedVestedYield : 30_799.999999e6,   // 1/4 of full yield
+            expectedMultiplier  : 0.25e27            // 1 / (2^2) = 0.25
+        });
+    }
+
+    function test_e2e_vsrDecreased() external {
+        uint256 startingTimestamp = block.timestamp;
+
+        _setVsr(FOUR_PCT_VSR);
+
+        uint256 positionId = _deposit(user1, 1_000_000e6);
+
+        _assertAccounting({
+            positionId          : positionId,
+            expectedFullYield   : 0,
+            expectedVestedYield : 0,
+            expectedMultiplier  : 0
+        });
+
+        vm.warp(startingTimestamp + CLIFF);
+
+        _assertAccounting({
+            positionId          : positionId,
+            expectedFullYield   : 39_999.999999e6,  // 4%
+            expectedVestedYield : 2499.999999e6,    // 1/16th of the full yield
+            expectedMultiplier  : 0.0625e27         // 1 / (4^2) = 0.0625
+        });
+
+        _setVsr(TWO_PCT_VSR);
+
+        _assertAccounting({
+            positionId          : positionId,
+            expectedFullYield   : 39_999.999999e6,  // 4%
+            expectedVestedYield : 2499.999999e6,    // 1/16th of the full yield
+            expectedMultiplier  : 0.0625e27         // 1 / (4^2) = 0.0625
+        });
+
+        vm.warp(startingTimestamp + TERM / 2);
+
+        _assertAccounting({
+            positionId          : positionId,
+            expectedFullYield   : 60_799.999999e6,  // 1.04 * 1.02 = 1.0608
+            expectedVestedYield : 15_199.999999e6,  // 1/4 of full yield
             expectedMultiplier  : 0.25e27           // 1 / (2^2) = 0.25
         });
     }
