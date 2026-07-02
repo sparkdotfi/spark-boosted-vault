@@ -66,9 +66,16 @@ interface ISparkBoostedVault is IAccessControlEnumerable {
     event MaxLiabilityCapSet(uint256 cap);
 
     /**
+     * @notice Emitted when the vesting cliff is updated.
+     * @param  sender The caller with DEFAULT_ADMIN_ROLE.
+     * @param  cliff  New cliff [seconds].
+     */
+    event CliffSet(address indexed sender, uint64 cliff);
+
+    /**
      * @notice Emitted every time drip() is called at a new rho.
      * @param  chi  The new rate accumulator value after the drip [ray].
-     * @param  diff The change in raw total assets [asset units].
+     * @param  diff The approximate change in aggregate raw total assets [asset units].
      */
     event Drip(uint256 chi, uint256 diff);
 
@@ -80,11 +87,18 @@ interface ISparkBoostedVault is IAccessControlEnumerable {
     event Take(address indexed to, uint256 assets);
 
     /**
-     * @notice Emitted when the VSR bounds are updated.
-     * @param  maxVsr New maximum [ray].
-     * @param  minVsr New minimum [ray].
+     * @notice Emitted when the vesting term is updated.
+     * @param  sender The caller with DEFAULT_ADMIN_ROLE.
+     * @param  term   New term [seconds].
      */
-    event VsrBoundsSet(uint256 maxVsr, uint256 minVsr);
+    event TermSet(address indexed sender, uint64 term);
+
+    /**
+     * @notice Emitted when the VSR bounds are updated.
+     * @param  minVsr New minimum [ray].
+     * @param  maxVsr New maximum [ray].
+     */
+    event VsrBoundsSet(uint256 minVsr, uint256 maxVsr);
 
     /**
      * @notice Emitted when the VSR is updated.
@@ -94,7 +108,7 @@ interface ISparkBoostedVault is IAccessControlEnumerable {
     event VsrSet(address indexed sender, uint256 vsr);
 
     /**
-     * @notice ERC4626 withdraw event.
+     * @notice Emitted when a withdraw occurs.
      * @param  account    The position owner whose state was reduced.
      * @param  positionId The unique identifier of the position.
      * @param  assets     The amount of underlying assets sent to receiver.
@@ -106,6 +120,83 @@ interface ISparkBoostedVault is IAccessControlEnumerable {
         uint256         assets,
         uint256         shares
     );
+
+    /**********************************************************************************************/
+    /*** Custom Errors                                                                          ***/
+    /**********************************************************************************************/
+
+    /**
+     * @notice Thrown when the vesting cliff duration is greater than the total vault term.
+     * @param  cliff The vesting cliff duration [seconds].
+     * @param  term  The total vesting term [seconds].
+     */
+    error CliffGreaterThanTerm(uint64 cliff, uint64 term);
+
+    /**
+     * @notice Thrown when the contract lacks sufficient liquidity to execute a transfer.
+     * @param  amount    The requested transfer amount [asset units].
+     * @param  liquidity The available contract balance [asset units].
+     */
+    error InsufficientLiquidity(uint256 amount, uint256 liquidity);
+
+    /**
+     * @notice Thrown when withdrawing more assets than are currently withdrawable from the
+     *         position.
+     * @param  assets       The requested withdrawal amount [asset units].
+     * @param  withdrawable The maximum assets currently withdrawable [asset units].
+     */
+    error InsufficientWithdrawable(uint256 assets, uint256 withdrawable);
+
+    /**
+     * @notice Thrown when a deposit would cause the total liability to exceed the cap.
+     * @param  liability       The attempted total liability [asset units].
+     * @param  maxLiabilityCap The maximum liability cap [asset units].
+     */
+    error MaxLiabilityCapExceeded(uint256 liability, uint256 maxLiabilityCap);
+
+    /**
+     * @notice Thrown when the VSR bounds are set such that the minimum is greater than the maximum.
+     * @param  minVsr The proposed minimum Vault Savings Rate [ray].
+     * @param  maxVsr The proposed maximum Vault Savings Rate [ray].
+     */
+    error MinVsrGreaterThanMaxVsr(uint256 minVsr, uint256 maxVsr);
+
+    /**
+     * @notice Thrown when the caller is not the owner of the specified position.
+     */
+    error NotPositionOwner();
+
+    /**
+     * @notice Thrown when the VSR is above the maximum allowed bound.
+     * @param  vsr    The attempted Vault Savings Rate [ray].
+     * @param  maxVsr The maximum allowed Vault Savings Rate [ray].
+     */
+    error VsrTooHigh(uint256 vsr, uint256 maxVsr);
+
+    /**
+     * @notice Thrown when the VSR is below the minimum allowed bound.
+     * @param  vsr    The attempted Vault Savings Rate [ray].
+     * @param  minVsr The minimum allowed Vault Savings Rate [ray].
+     */
+    error VsrTooLow(uint256 vsr, uint256 minVsr);
+
+    /// @notice Thrown when the admin address is address(0).
+    error ZeroAdmin();
+
+    /// @notice Thrown when the underlying asset is address(0).
+    error ZeroAsset();
+
+    /// @notice Thrown when the deposit amount or resulting shares is zero.
+    error ZeroDeposit();
+
+    /**
+     * @notice Thrown when trying to withdraw from a position that does not exist or has zero
+     *         withdrawable assets.
+     */
+    error ZeroPosition();
+
+    /// @notice Thrown when a withdrawal would result in zero shares or zero assets withdrawn.
+    error ZeroWithdrawal();
 
     /**********************************************************************************************/
     /*** Interactive Functions                                                                  ***/
@@ -151,12 +242,28 @@ interface ISparkBoostedVault is IAccessControlEnumerable {
     function initialize(address asset_, address admin_, uint64 term_, uint64 cliff_) external;
 
     /**
+     * @notice Sets the vesting cliff duration for the vault.
+     * @dev    Can only be called by accounts with DEFAULT_ADMIN_ROLE.
+     *         The cliff must be less than or equal to the term.
+     * @param  cliff_ The new vesting cliff duration [seconds].
+     */
+    function setCliff(uint64 cliff_) external;
+
+    /**
      * @notice Sets the maximum liability cap for the vault.
      * @dev    Can only be called by accounts with DEFAULT_ADMIN_ROLE.
      *         Deposits are disabled if they would cause the total liability to exceed this cap.
      * @param  cap_ The new maximum liability cap [asset units].
      */
     function setMaxLiabilityCap(uint256 cap_) external;
+
+    /**
+     * @notice Sets the total vault term.
+     * @dev    Can only be called by accounts with DEFAULT_ADMIN_ROLE.
+     *         The term must be greater than or equal to the cliff.
+     * @param  term_ The new total vault term [seconds].
+     */
+    function setTerm(uint64 term_) external;
 
     /**
      * @notice Sets the Vault Savings Rate (VSR).
@@ -179,9 +286,9 @@ interface ISparkBoostedVault is IAccessControlEnumerable {
     /**
      * @notice Allows authorized accounts with TAKER_ROLE to withdraw assets from the vault.
      * @dev    Transfers the specified amount of underlying assets to the caller.
-     * @param  value_ The amount of assets to withdraw [asset units].
+     * @param  assets_ The amount of assets to withdraw [asset units].
      */
-    function take(uint256 value_) external;
+    function take(uint256 assets_) external;
 
     /**
      * @notice Withdraws all assets from a specific position.
@@ -208,44 +315,28 @@ interface ISparkBoostedVault is IAccessControlEnumerable {
     /*** Variables                                                                              ***/
     /**********************************************************************************************/
 
-    /**
-     * @notice Returns the absolute maximum allowed Vault Savings Rate (VSR).
-     */
+    /// @notice Returns the absolute maximum allowed Vault Savings Rate (VSR).
     function MAX_VSR() external view returns (uint256);
 
-    /**
-     * @notice Returns the precision multiplier representing 1.0 (1e27).
-     */
+    /// @notice Returns the precision multiplier representing 1.0 (1e27).
     function RAY() external view returns (uint256);
 
-    /**
-     * @notice Returns the identifier of the role that can set the VSR.
-     */
+    /// @notice Returns the identifier of the role that can set the VSR.
     function SETTER_ROLE() external view returns (bytes32);
 
-    /**
-     * @notice Returns the identifier of the role that can take assets.
-     */
+    /// @notice Returns the identifier of the role that can take assets.
     function TAKER_ROLE() external view returns (bytes32);
 
-    /**
-     * @notice Returns the implementation version string.
-     */
+    /// @notice Returns the implementation version string.
     function VERSION() external view returns (string memory);
 
-    /**
-     * @notice Returns the address of the underlying asset.
-     */
+    /// @notice Returns the address of the underlying asset.
     function asset() external view returns (address);
 
-    /**
-     * @notice Returns the rate accumulator (chi) as of the last drip.
-     */
+    /// @notice Returns the rate accumulator (chi) as of the last drip.
     function chi() external view returns (uint192);
 
-    /**
-     * @notice Returns the vesting cliff duration configured for positions.
-     */
+    /// @notice Returns the vesting cliff duration configured for positions.
     function cliff() external view returns (uint64);
 
     /**
@@ -256,54 +347,36 @@ interface ISparkBoostedVault is IAccessControlEnumerable {
     function maxDeposit() external view returns (uint256);
 
     /**
-     * @notice Returns the current total liability of the vault calculated up to the current
-     *         block timestamp.
+     * @notice Returns the current total liability of the vault calculated up to the current block
+     *         timestamp.
      */
     function maxLiability() external view returns (uint256);
 
-    /**
-     * @notice Returns the maximum liability cap of the vault.
-     */
+    /// @notice Returns the maximum liability cap of the vault.
     function maxLiabilityCap() external view returns (uint256);
 
-    /**
-     * @notice Returns the maximum allowed VSR value.
-     */
+    /// @notice Returns the maximum allowed VSR value.
     function maxVsr() external view returns (uint256);
 
-    /**
-     * @notice Returns the minimum allowed VSR value.
-     */
+    /// @notice Returns the minimum allowed VSR value.
     function minVsr() external view returns (uint256);
 
-    /**
-     * @notice Returns the rate accumulator (chi) calculated up to the current block timestamp.
-     */
+    /// @notice Returns the rate accumulator (chi) calculated up to the current block timestamp.
     function nowChi() external view returns (uint256);
 
-    /**
-     * @notice Returns the timestamp of the last drip operation.
-     */
+    /// @notice Returns the timestamp of the last drip operation.
     function rho() external view returns (uint64);
 
-    /**
-     * @notice Returns the total vesting duration configured for positions.
-     */
+    /// @notice Returns the total vesting duration configured for positions.
     function term() external view returns (uint64);
 
-    /**
-     * @notice Returns the total principal deposited across all active positions.
-     */
+    /// @notice Returns the total principal deposited across all active positions.
     function totalPrincipal() external view returns (uint256);
 
-    /**
-     * @notice Returns the total shares issued across all active positions.
-     */
+    /// @notice Returns the total shares issued across all active positions.
     function totalShares() external view returns (uint256);
 
-    /**
-     * @notice Returns the current Vault Savings Rate (VSR).
-     */
+    /// @notice Returns the current Vault Savings Rate (VSR).
     function vsr() external view returns (uint256);
 
     /**********************************************************************************************/

@@ -49,7 +49,6 @@ contract SparkBoostedVaultIntegrationTests is Test {
         vm.startPrank(admin);
 
         vault.grantRole(SETTER_ROLE, setter);
-
         vault.grantRole(TAKER_ROLE,  taker);
 
         vault.setMaxLiabilityCap(1_000_000e6);
@@ -84,47 +83,43 @@ contract SparkBoostedVaultIntegrationTests is Test {
         deal(address(asset), address(vault), vault.maxLiability());
     }
 
-    function _assetsOf(uint256 positionId) internal view returns (uint256) {
-        return vault.getPosition(positionId).principal + vault.yieldOf(positionId);
-    }
-
     /**********************************************************************************************/
     /*** Single user e2e tests                                                                  ***/
     /**********************************************************************************************/
 
     function test_e2e_singleUser_withdrawFullTerm() external {
-        uint256 amount = 100_000e6;
+        uint256 principal = 100_000e6;
 
         _setVsr(FOUR_PCT_VSR);
 
         // Step 1: User 1 deposits
-        uint256 position1 = _deposit(user1, amount);
+        uint256 positionId = _deposit(user1, principal);
 
         // Step 2: Wait full term
         skip(TERM);
 
         // Step 3: User withdraws receiving principal + full yield
-        assertEq(vault.vestingMultiplierOf(position1), RAY);
-        assertEq(vault.unvestedYieldOf(position1),     0);
+        assertEq(vault.vestingMultiplierOf(positionId), RAY);
+        assertEq(vault.unvestedYieldOf(positionId),     0);
 
-        uint256 rawAssets = _assetsOf(position1);
+        uint256 yield = vault.yieldOf(positionId);
 
-        assertGt(rawAssets,                       amount);  // shows yield accrued
-        assertEq(vault.withdrawableOf(position1), rawAssets);
-        assertEq(vault.vestedYieldOf(position1),  rawAssets - amount);
+        assertGt(yield,                            0);                 // shows yield accrued
+        assertEq(vault.vestedYieldOf(positionId),  yield);             // shows its entirely vested
+        assertEq(vault.withdrawableOf(positionId), principal + yield); // shows its entirely withdrawable
 
         _fundVaultToTotalAssets();
 
         vm.prank(user1);
-        vault.withdraw(position1, user1);
+        vault.withdraw(positionId, user1);
 
-        assertEq(asset.balanceOf(user1),          rawAssets);
+        assertEq(asset.balanceOf(user1),          principal + yield);
         assertEq(asset.balanceOf(address(vault)), 0);
         assertEq(vault.totalShares(),             0);
         assertEq(vault.totalPrincipal(),          0);
         assertEq(vault.maxLiability(),            0);
 
-        ISparkBoostedVault.Position memory position = vault.getPosition(position1);
+        ISparkBoostedVault.Position memory position = vault.getPosition(positionId);
 
         assertEq(position.principal,   0);
         assertEq(position.shares,      0);
@@ -132,33 +127,33 @@ contract SparkBoostedVaultIntegrationTests is Test {
     }
 
     function test_e2e_singleUser_exitsBeforeCliff() external {
-        uint256 amount = 100_000e6;
+        uint256 principal = 100_000e6;
 
         _setVsr(FOUR_PCT_VSR);
 
         // Step 1: User 1 deposits
-        uint256 position1 = _deposit(user1, amount);
+        uint256 positionId = _deposit(user1, principal);
 
         // Step 2: Wait just before cliff
         skip(CLIFF - 1);
 
         // Step 3: User withdraws receiving only principal
-        assertEq(vault.vestingMultiplierOf(position1), 0);
-        assertEq(vault.vestedYieldOf(position1),       0);
-        assertEq(vault.withdrawableOf(position1),      amount);
+        assertEq(vault.vestingMultiplierOf(positionId), 0);
+        assertEq(vault.vestedYieldOf(positionId),       0);
+        assertEq(vault.withdrawableOf(positionId),      principal);
 
-        uint256 unvestedYield = vault.unvestedYieldOf(position1);
+        uint256 unvestedYield = vault.unvestedYieldOf(positionId);
 
         assertGt(unvestedYield, 0);
 
         _fundVaultToTotalAssets();
 
-        assertEq(asset.balanceOf(address(vault)), amount + unvestedYield);
+        assertEq(asset.balanceOf(address(vault)), principal + unvestedYield);
 
         vm.prank(user1);
-        vault.withdraw(position1, user1);
+        vault.withdraw(positionId, user1);
 
-        assertEq(asset.balanceOf(user1),          amount);
+        assertEq(asset.balanceOf(user1),          principal);
         assertEq(asset.balanceOf(address(vault)), unvestedYield);
         assertEq(vault.totalShares(),             0);
         assertEq(vault.totalPrincipal(),          0);
@@ -178,51 +173,51 @@ contract SparkBoostedVaultIntegrationTests is Test {
     function testFuzz_e2e_singleUser_exitsMidVesting(uint256 elapsed) external {
         elapsed = bound(elapsed, CLIFF + 1, TERM - 1);
 
-        uint256 amount = 100_000e6;
+        uint256 principal = 100_000e6;
 
         _setVsr(FOUR_PCT_VSR);
 
         // Step 1: User 1 deposits
-        uint256 position1 = _deposit(user1, amount);
+        uint256 positionId = _deposit(user1, principal);
 
         // Step 2: Wait for elapsed time
         skip(elapsed);
 
         // Step 3: User withdraws receiving partial yield
-        uint256 multiplier = vault.vestingMultiplierOf(position1);
-        uint256 rawYield   = _assetsOf(position1) - amount;
+        uint256 multiplier = vault.vestingMultiplierOf(positionId);
+        uint256 yield      = vault.yieldOf(positionId);
 
         assertGt(multiplier, 0);
         assertLt(multiplier, RAY);
 
-        uint256 expectedVested   = rawYield * multiplier / RAY;
-        uint256 expectedUnvested = rawYield - expectedVested;
+        uint256 expectedVested        = yield * multiplier / RAY;
+        uint256 expectedUnvestedYield = yield - expectedVested;
 
-        assertEq(vault.vestedYieldOf(position1),   expectedVested);
-        assertEq(vault.unvestedYieldOf(position1), expectedUnvested);
-        assertEq(vault.withdrawableOf(position1),  amount + expectedVested);
+        assertEq(vault.vestedYieldOf(positionId),   expectedVested);
+        assertEq(vault.unvestedYieldOf(positionId), expectedUnvestedYield);
+        assertEq(vault.withdrawableOf(positionId),  principal + expectedVested);
 
         _fundVaultToTotalAssets();
 
         assertEq(asset.balanceOf(user1),          0);
-        assertEq(asset.balanceOf(address(vault)), amount + rawYield);
-        assertEq(vault.maxLiability(),            amount + rawYield);
+        assertEq(asset.balanceOf(address(vault)), principal + yield);
+        assertEq(vault.maxLiability(),            principal + yield);
 
         vm.prank(user1);
-        vault.withdraw(position1, user1);
+        vault.withdraw(positionId, user1);
 
-        assertEq(asset.balanceOf(user1),          amount + expectedVested);
-        assertEq(asset.balanceOf(address(vault)), expectedUnvested);
+        assertEq(asset.balanceOf(user1),          principal + expectedVested);
+        assertEq(asset.balanceOf(address(vault)), expectedUnvestedYield);
         assertEq(vault.maxLiability(),            0);
     }
 
-    function test_e2e_singleUser_reDepositsAfterFullExit() external {
-        uint256 amount = 100_000e6;
+    function test_e2e_singleUser_redepositsAfterFullExit() external {
+        uint256 principal = 100_000e6;
 
         _setVsr(FOUR_PCT_VSR);
 
         // Step 1: User 1 deposits
-        uint256 position1 = _deposit(user1, amount);
+        uint256 positionId1 = _deposit(user1, principal);
 
         // Step 2: Skip to term
         skip(TERM);
@@ -230,43 +225,43 @@ contract SparkBoostedVaultIntegrationTests is Test {
         // Step 3: User withdraws receiving principal + full yield
         _fundVaultToTotalAssets();
 
-        uint256 firstWithdrawal = vault.withdrawableOf(position1);
+        uint256 withdrawal1 = vault.withdrawableOf(positionId1);
 
-        assertEq(asset.balanceOf(user1),                 0);
-        assertEq(vault.getPosition(position1).principal, amount);
+        assertEq(asset.balanceOf(user1),                   0);
+        assertEq(vault.getPosition(positionId1).principal, principal);
 
         vm.prank(user1);
-        vault.withdraw(position1, user1);
+        vault.withdraw(positionId1, user1);
 
-        assertEq(asset.balanceOf(user1),                 firstWithdrawal);
-        assertEq(vault.getPosition(position1).principal, 0);
+        assertEq(asset.balanceOf(user1),                   withdrawal1);
+        assertEq(vault.getPosition(positionId1).principal, 0);
 
         // Step 4: User 1 re-deposits
-        deal(address(asset), user1, firstWithdrawal);
+        deal(address(asset), user1, withdrawal1);
 
         vm.startPrank(user1);
-        asset.approve(address(vault), firstWithdrawal);
-        uint256 position2 = vault.deposit(firstWithdrawal);
+        asset.approve(address(vault), withdrawal1);
+        uint256 positionId2 = vault.deposit(withdrawal1);
         vm.stopPrank();
 
-        assertEq(vault.getPosition(position2).principal,   firstWithdrawal);
-        assertEq(vault.getPosition(position2).depositTime, uint64(block.timestamp));
+        assertEq(vault.getPosition(positionId2).principal,   withdrawal1);
+        assertEq(vault.getPosition(positionId2).depositTime, uint64(block.timestamp));
 
         skip(TERM);
 
         _fundVaultToTotalAssets();
 
-        uint256 secondWithdrawal = vault.withdrawableOf(position2);
+        uint256 withdrawal2 = vault.withdrawableOf(positionId2);
 
-        assertGt(secondWithdrawal, firstWithdrawal);
+        assertGt(withdrawal2, withdrawal1);
 
         assertEq(asset.balanceOf(user1), 0);
-        assertEq(vault.maxLiability(),   secondWithdrawal);
+        assertEq(vault.maxLiability(),   withdrawal2);
 
         vm.prank(user1);
-        vault.withdraw(position2, user1);
+        vault.withdraw(positionId2, user1);
 
-        assertEq(asset.balanceOf(user1), secondWithdrawal);
+        assertEq(asset.balanceOf(user1), withdrawal2);
         assertEq(vault.maxLiability(),   0);
     }
 
@@ -277,52 +272,78 @@ contract SparkBoostedVaultIntegrationTests is Test {
     // Two users deposit simultaneously - user1 exits before cliff (forfeits yield),
     // user2 holds to full term and receives all yield.
     function test_e2e_twoUsers_differentExitTimings() external {
-        uint256 amount1 = 100_000e6;
-        uint256 amount2 = 200_000e6;
+        uint256 principal1 = 100_000e6;
+        uint256 principal2 = 200_000e6;
 
-        uint256 position1 = _deposit(user1, amount1);
-        uint256 position2 = _deposit(user2, amount2);
+        uint256 positionId1 = _deposit(user1, principal1);
+        uint256 positionId2 = _deposit(user2, principal2);
 
         _setVsr(FOUR_PCT_VSR);
 
-        assertEq(vault.totalShares(),    amount1 + amount2);
-        assertEq(vault.totalPrincipal(), amount1 + amount2);
+        assertEq(vault.totalShares(),    principal1 + principal2);
+        assertEq(vault.totalPrincipal(), principal1 + principal2);
+        assertEq(vault.maxLiability(),   principal1 + principal2);
 
         // User1 exits before cliff: forfeits all yield.
         skip(CLIFF - 1);
 
-        assertGt(vault.unvestedYieldOf(position1),     0);
-        assertEq(vault.vestingMultiplierOf(position1), 0);
-        assertEq(vault.withdrawableOf(position1),      amount1);
+        uint256 unvestedYield1 = vault.unvestedYieldOf(positionId1);
+        uint256 unvestedYield2 = vault.unvestedYieldOf(positionId2);
 
-        assertEq(asset.balanceOf(user1), 0);
-        assertEq(vault.totalPrincipal(), amount1 + amount2);
+        assertGt(unvestedYield1, 0);
+
+        assertEq(unvestedYield1,                         vault.yieldOf(positionId1));
+        assertEq(vault.vestedYieldOf(positionId1),       0);
+        assertEq(vault.vestingMultiplierOf(positionId1), 0);
+        assertEq(vault.withdrawableOf(positionId1),      principal1);
+
+        assertGt(unvestedYield2, 0);
+
+        assertEq(unvestedYield2,                         vault.yieldOf(positionId2));
+        assertEq(vault.vestedYieldOf(positionId2),       0);
+        assertEq(vault.vestingMultiplierOf(positionId2), 0);
+        assertEq(vault.withdrawableOf(positionId2),      principal2);
+
+        assertEq(vault.totalPrincipal(), principal1 + principal2);
+        assertEq(vault.maxLiability(),   principal1 + unvestedYield1 + principal2 + unvestedYield2);
+
+        assertEq(asset.balanceOf(address(vault)), principal1 + principal2);
+        assertEq(asset.balanceOf(user1),          0);
+        assertEq(asset.balanceOf(user2),          0);
 
         vm.prank(user1);
-        vault.withdraw(position1, user1);
+        vault.withdraw(positionId1, user1);
 
-        assertEq(asset.balanceOf(user1), amount1);
-        assertEq(vault.totalPrincipal(), amount2);
+        assertEq(vault.totalPrincipal(), principal2);
+        assertEq(vault.maxLiability(),   principal2 + unvestedYield2);
+
+        assertEq(asset.balanceOf(address(vault)), principal2);
+        assertEq(asset.balanceOf(user1),          principal1);
+        assertEq(asset.balanceOf(user2),          0);
 
         // User2 holds until their full term (TERM elapsed since original deposit)
         skip(TERM - (CLIFF - 1));
 
-        assertEq(vault.vestingMultiplierOf(position2), RAY);
+        assertEq(vault.vestingMultiplierOf(positionId2), RAY);
 
         _fundVaultToTotalAssets();
 
-        uint256 user2Assets = _assetsOf(position2);
+        uint256 yield2 = vault.yieldOf(positionId2);
 
-        assertGt(user2Assets, amount2);
+        assertGt(yield2, 0);
 
-        assertEq(asset.balanceOf(user2), 0);
-        assertEq(vault.totalPrincipal(), amount2);
-        assertEq(vault.maxLiability(),   user2Assets);
+        assertEq(asset.balanceOf(address(vault)), principal2 + yield2);
+        assertEq(asset.balanceOf(user2),          0);
+
+        assertEq(vault.totalPrincipal(), principal2);
+        assertEq(vault.maxLiability(),   principal2 + yield2);
 
         vm.prank(user2);
-        vault.withdraw(position2, user2);
+        vault.withdraw(positionId2, user2);
 
-        assertEq(asset.balanceOf(user2), user2Assets);
+        assertEq(asset.balanceOf(address(vault)), 0);
+        assertEq(asset.balanceOf(user2),          principal2 + yield2);
+
         assertEq(vault.totalPrincipal(), 0);
         assertEq(vault.maxLiability(),   0);
     }

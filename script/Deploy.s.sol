@@ -12,9 +12,6 @@ import { SparkBoostedVault } from "../src/SparkBoostedVault.sol";
 
 contract DeploySparkBoostedVaultImplementation is Script {
 
-    using ScriptTools for string;
-    using stdJson     for string;
-
     function run() public {
         vm.setEnv("FOUNDRY_EXPORTS_OVERWRITE_LATEST", "true");
 
@@ -37,8 +34,7 @@ contract DeploySparkBoostedVaultImplementation is Script {
 
 contract DeploySparkBoostedVaultProxy is Script {
 
-    using ScriptTools for string;
-    using stdJson     for string;
+    using stdJson for string;
 
     address implementation = vm.envAddress("SPARK_BOOSTED_VAULT_IMPL");
 

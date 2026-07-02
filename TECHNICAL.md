@@ -2,7 +2,7 @@
 
 ## Overview
 
-SparkBoostedVault is a per-user vesting variant of [SparkVault](./src/SparkVault.sol). Each user's yield is gated by a vesting curve defined by two initialization-set durations: **`cliff`** and **`term`**. Principal is always withdrawable; yield is multiplied by a curve that is 0 before `cliff` and then a **quadratic ease-in** `(elapsed/term)²` from 0 to 1 over the `[0, term]` window (with the pre-cliff portion zeroed out — a jump at cliff). Because the ramp is quadratic and slow at the start, early exits forfeit disproportionately more yield than they would under a linear curve.
+SparkBoostedVault is a per-user vesting variant of [SparkVault](https://github.com/sparkdotfi/spark-vaults-v2/blob/v1.0.1/src/SparkVault.sol). Each user's yield is gated by a vesting curve defined by two initialization-set durations: **`cliff`** and **`term`**. Principal is always withdrawable; yield is multiplied by a curve that is 0 before `cliff` and then a **quadratic ease-in** `(elapsed/term)²` from 0 to 1 over the `[0, term]` window (with the pre-cliff portion zeroed out — a jump at cliff). Because the ramp is quadratic and slow at the start, early exits forfeit disproportionately more yield than they would under a linear curve.
 
 **Positions have unique IDs and are tracked per user:**
 
@@ -35,7 +35,13 @@ Enumerable access is exposed via the following read methods:
 - `getPositionsOf(address account)` returns an array of `Position` structs for the account.
 - `getPosition(uint256 positionId)` retrieves details of a specific position.
 
-The `chi` / `rho` / `vsr` rate-accumulator machinery is unchanged from SparkVault — `chi` grows at `vsr` per second.
+The core mathematical machinery for the rate accumulator (`chi` / `rho` / `vsr`) operates on the same principles as [SparkVault](https://github.com/sparkdotfi/spark-vaults-v2/blob/dev/src/SparkVault.sol) — `chi` grows continuously at the Vault Savings Rate (`vsr`) per second.
+
+However, `SparkBoostedVault` differs significantly from the original `SparkVault` in terms of tokenization, positions, and vesting:
+
+- **No Tokenization**: `SparkVault` is a standard ERC20-tokenized vault. `SparkBoostedVault` does not implement the ERC20 or ERC4626 standard and has no transferable share tokens or allowances.
+- **Multi-Position Tracking**: While `SparkVault` pools assets into a single share balance per user, `SparkBoostedVault` tracks independent deposits as discrete positions identified by unique `positionId`s.
+- **Vesting Curves**: Deposits in `SparkVault` are redeemable instantly with accrued yield. In `SparkBoostedVault`, accrued yield is locked under a quadratic vesting curve with a `cliff` and `term` based on the position's individual `depositTime`.
 
 ## The vesting curve
 
@@ -113,7 +119,17 @@ Both external methods delegate to the internal `_withdraw(positionId, assets, re
 10. Push `assets` to recipient via safeTransfer
 ```
 
-The user receives the requested `assets`. Any forfeited unvested yield corresponding to the burned shares remains in the vault and is takeable by `TAKER_ROLE`.
+The user receives the requested `assets`. Any forfeited unvested yield corresponding to the burned shares remains in the vault as surplus.
+
+---
+
+## Take (Balance Withdrawal)
+
+Authorized accounts with the `TAKER_ROLE` can withdraw assets from the vault using the `take(assets)` function.
+
+While the primary design intent is for takers to harvest accrued surplus and forfeited yield, the `take` function is implemented as an **unrestricted balance withdrawal** of the underlying asset up to the contract's total current balance.
+
+Consequently, the contract relies on a trust assumption: the `TAKER` is trusted to withdraw the vault's assets, invest/deploy them productively, and return liquidity to the vault as needed to satisfy user withdrawals.
 
 ---
 
@@ -168,12 +184,12 @@ Since the contract implements a multi-position model (multiple position IDs per 
 
 ## Properties summary
 
-| Property               | Mechanism                                                                                                                                            |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Per-user vesting curve | `m = 0 if elapsed < cliff else min((elapsed/term)², 1)` (quadratic ease-in)                                                                          |
-| Position model         | Multiple positions per address (tracked by positionId), supports partial withdraws                                                                   |
-| Principal              | Always paid out on `withdraw()` (even before cliff)                                                                                                  |
-| Forfeited yield        | Stays in vault, takeable by `TAKER_ROLE`                                                                                                             |
-| Identity binding       | Position owner must call `withdraw` (as `msg.sender`), but can specify any `recipient` address; `deposit` always creates a position for `msg.sender` |
-| Non-fungible           | No ERC20 surface; no allowance; no transfer                                                                                                          |
-| Upgradeability         | Upgradeable — implementation uses UUPS proxy pattern; admin can upgrade                                                                              |
+| Property               | Mechanism                                                                                                                                                             |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Per-user vesting curve | `m = 0` if `elapsed < cliff` else `(elapsed/term)²` if `elapsed < term` else `1` (quadratic ease-in with a discontinuous jump at `cliff` from `0` to `(cliff/term)²`) |
+| Position model         | Multiple positions per address (tracked by positionId), supports partial withdraws                                                                                    |
+| Principal              | Always paid out on `withdraw()` (even before cliff)                                                                                                                   |
+| Forfeited yield        | Stays in vault, increasing surplus; `TAKER_ROLE` can withdraw assets via unrestricted `take()` balance withdrawal                                                     |
+| Identity binding       | Position owner must call `withdraw` (as `msg.sender`), but can specify any `recipient` address; `deposit` always creates a position for `msg.sender`                  |
+| Non-fungible           | No ERC20 surface; no allowance; no transfer                                                                                                                           |
+| Upgradeability         | Upgradeable — implementation uses UUPS proxy pattern; admin can upgrade                                                                                               |
