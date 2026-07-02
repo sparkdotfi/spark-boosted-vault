@@ -501,7 +501,7 @@ contract SparkBoostedVault is ISparkBoostedVault, UUPSUpgradeable, AccessControl
 
         require(assets_ != 0 && sharePortion_ != 0, ZeroWithdrawal());
 
-        if (sharePortion_ == shares_ || principalPortion_ == principal_) {
+        if (sharePortion_ >= shares_ || principalPortion_ >= principal_) {
             positionIdSet_.remove(positionId_);
 
             delete $.positions[positionId_];
