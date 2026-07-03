@@ -30,7 +30,7 @@ contract HandlerBase is Test {
         _;
 
         assertEq(vault.totalPrincipal(), totalPrincipalBefore, "invariant: totalPrincipal changed");
-        assertEq(vault.totalShares(), totalSharesBefore,       "invariant: totalShares changed");
+        assertEq(vault.totalShares(),    totalSharesBefore,    "invariant: totalShares changed");
     }
 
     constructor(address vault_) {
