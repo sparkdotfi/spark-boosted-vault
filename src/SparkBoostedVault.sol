@@ -515,7 +515,7 @@ contract SparkBoostedVault is ISparkBoostedVault, UUPSUpgradeable, AccessControl
         $.totalShares    -= sharePortion_;
         $.totalPrincipal -= principalPortion_;
 
-        emit Withdraw(msg.sender, positionId_, assets_, sharePortion_);
+        emit Withdraw(msg.sender, positionId_, recipient_, assets_, sharePortion_);
 
         _pushAsset(recipient_, assets_);
     }

@@ -111,12 +111,14 @@ interface ISparkBoostedVault is IAccessControlEnumerable {
      * @notice Emitted when a withdraw occurs.
      * @param  account    The position owner whose state was reduced.
      * @param  positionId The unique identifier of the position.
+     * @param  recipient  The address to withdraw assets to.
      * @param  assets     The amount of underlying assets sent to receiver.
      * @param  shares     The raw rate-based shares burned from the position.
      */
     event Withdraw(
         address indexed account,
         uint256 indexed positionId,
+        address indexed recipient,
         uint256         assets,
         uint256         shares
     );
@@ -430,7 +432,7 @@ interface ISparkBoostedVault is IAccessControlEnumerable {
     function vestedYieldOf(uint256 positionId_) external view returns (uint256 vestedYield_);
 
     /**
-     * @notice Returns the vesting multiplier [ray] for the user's current position.
+     * @notice Returns the vesting multiplier [ray] for the user's `positionId_`.
      *         A return of 0 means none of the yield has vested.
      *         A return of RAY means yield is fully vested.
      * @param  positionId_ The unique identifier of the position.
