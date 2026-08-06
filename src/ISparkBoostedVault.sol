@@ -150,11 +150,11 @@ interface ISparkBoostedVault is IAccessControlEnumerable {
     error InsufficientWithdrawable(uint256 assets, uint256 withdrawable);
 
     /**
-     * @notice Thrown when a deposit would cause the total liability to exceed the cap.
-     * @param  liability       The attempted total liability [asset units].
-     * @param  maxLiabilityCap The maximum liability cap [asset units].
+     * @notice Thrown when a deposit would exceed the maximum deposit amount.
+     * @param  assets     The attempted deposit amount [asset units].
+     * @param  maxDeposit The maximum deposit amount [asset units].
      */
-    error MaxLiabilityCapExceeded(uint256 liability, uint256 maxLiabilityCap);
+    error MaxDepositExceeded(uint256 assets, uint256 maxDeposit);
 
     /**
      * @notice Thrown when the VSR bounds are set such that the minimum is greater than the maximum.

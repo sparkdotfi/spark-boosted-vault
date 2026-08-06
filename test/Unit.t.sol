@@ -501,16 +501,18 @@ contract SparkBoostedVault_UnitTests is Test {
     /*** deposit Tests                                                                          ***/
     /**********************************************************************************************/
 
-    function test_deposit_depositCapExceededBoundary() external {
+    function test_deposit_maxDepositExceededBoundary() external {
         uint256 cap = 1_000_000e6;
 
         vault.__setMaxLiabilityCap(cap);
+
+        assertEq(vault.maxDeposit(), cap);
 
         _mockTransferFrom(asset, user1, address(vault), cap, true);
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                ISparkBoostedVault.MaxLiabilityCapExceeded.selector,
+                ISparkBoostedVault.MaxDepositExceeded.selector,
                 cap + 1,
                 cap
             )
@@ -521,6 +523,34 @@ contract SparkBoostedVault_UnitTests is Test {
 
         vm.prank(user1);
         vault.deposit(cap);
+    }
+
+    function test_deposit_maxDepositExceededBoundary_nonZeroLiability() external {
+        vault.__setMaxLiabilityCap(210_000e6);
+        vault.__setTotalShares(100_000e6);
+        vault.__setChi(1.5e27);
+
+        assertEq(vault.maxLiability(), 150_000e6);
+        assertEq(vault.maxDeposit(),   60_000e6);
+
+        _mockTransferFrom(asset, user1, address(vault), 60_000e6, true);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ISparkBoostedVault.MaxDepositExceeded.selector,
+                60_000e6 + 1,
+                60_000e6
+            )
+        );
+
+        vm.prank(user1);
+        vault.deposit(60_000e6 + 1);
+
+        vm.prank(user1);
+        vault.deposit(60_000e6);
+
+        assertEq(vault.maxLiability(), 210_000e6);
+        assertEq(vault.maxDeposit(),   0);
     }
 
     function test_deposit_zeroDeposit() external {
