@@ -274,7 +274,13 @@ contract SparkBoostedVault is ISparkBoostedVault, UUPSUpgradeable, AccessControl
         uint256 maxLiability_    = maxLiability();
         uint256 maxLiabilityCap_ = _getVaultStorage().maxLiabilityCap;
 
-        return maxLiabilityCap_ > maxLiability_ ? maxLiabilityCap_ - maxLiability_ : 0;
+        if (maxLiability_ >= maxLiabilityCap_) return 0;
+
+        uint256 remainingCapacity_ = maxLiabilityCap_ - maxLiability_;
+        uint256 minDeposit_        = Math.ceilDiv(nowChi(), RAY);
+
+        // require at least minDeposit to mint 1 share; otherwise return 0 if at capacity
+        return remainingCapacity_ >= minDeposit_ ? remainingCapacity_ : 0;
     }
 
     /// @inheritdoc ISparkBoostedVault

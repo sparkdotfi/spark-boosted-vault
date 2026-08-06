@@ -2372,6 +2372,25 @@ contract SparkBoostedVault_UnitTests is Test {
         assertEq(vault.maxDeposit(), 0);
     }
 
+    function test_getter_maxDeposit_minDepositBoundary() external {
+        vault.__setMaxLiabilityCap(150_000e6);
+        vault.__setTotalShares(100_000e6);
+        vault.__setChi(1.5e27);
+
+        // A `chi` of 1.5 RAY requires at least two asset units to mint a single share.
+        assertEq(vault.maxLiability(), 150_000e6);
+        assertEq(vault.maxDeposit(),   0);
+
+        // One unit of remaining capacity would mint zero shares, so the vault is at capacity.
+        vault.__setMaxLiabilityCap(150_000e6 + 1);
+
+        assertEq(vault.maxDeposit(), 0);
+
+        vault.__setMaxLiabilityCap(150_000e6 + 2);
+
+        assertEq(vault.maxDeposit(), 2);
+    }
+
     function test_getter_maxLiability() external {
         assertEq(vault.maxLiability(), 0);
 
