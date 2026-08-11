@@ -344,12 +344,17 @@ interface ISparkBoostedVault is IAccessControlEnumerable {
     function maxDeposit() external view returns (uint256);
 
     /**
-     * @notice Returns the current total liability of the vault calculated up to the current block
-     *         timestamp.
+     * @notice Returns the current total share-valued liability of the vault calculated up to the
+     *         current block timestamp.
+     * @dev    Since shares are rounded down on deposit while principal is stored in full, this can
+     *         be below the sum of `withdrawableOf()` by up to `chi / RAY + 1` units per position.
      */
     function maxLiability() external view returns (uint256);
 
-    /// @notice Returns the maximum liability cap of the vault.
+    /**
+     * @notice Returns the maximum liability cap of the vault.
+     * @dev    Gates new deposits only. `maxLiability()` grows with `chi` and can exceed this cap.
+     */
     function maxLiabilityCap() external view returns (uint256);
 
     /// @notice Returns the maximum allowed VSR value.

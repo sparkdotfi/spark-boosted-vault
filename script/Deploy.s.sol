@@ -51,10 +51,16 @@ contract DeploySparkBoostedVaultProxy is Script {
         ));
         string memory inputConfig = ScriptTools.readInput(fileSlug);
 
-        address admin = inputConfig.readAddress(".admin");
-        address asset = inputConfig.readAddress(".asset");
-        uint64  term  = uint64(inputConfig.readUint(".term"));
-        uint64  cliff = uint64(inputConfig.readUint(".cliff"));
+        address admin      = inputConfig.readAddress(".admin");
+        address asset      = inputConfig.readAddress(".asset");
+        uint256 termInput  = inputConfig.readUint(".term");
+        uint256 cliffInput = inputConfig.readUint(".cliff");
+
+        require(termInput  <= type(uint64).max, "term exceeds uint64");
+        require(cliffInput <= type(uint64).max, "cliff exceeds uint64");
+
+        uint64 term  = uint64(termInput);
+        uint64 cliff = uint64(cliffInput);
 
         // Deploy SparkBoostedVault proxy
         vm.startBroadcast();
