@@ -115,20 +115,22 @@ contract SparkBoostedVault is ISparkBoostedVault, UUPSUpgradeable, AccessControl
         override
         initializer
     {
+        __AccessControlEnumerable_init();
+
         require(asset_ != address(0), ZeroAsset());
         require(admin_ != address(0), ZeroAdmin());
         require(cliff_ <= term_,      CliffGreaterThanTerm(cliff_, term_));
 
         VaultStorage storage $ = _getVaultStorage();
 
-        $.asset  = asset_;
-        $.chi    = uint192(RAY);
-        $.cliff  = cliff_;
-        $.maxVsr = RAY;
-        $.minVsr = RAY;
-        $.rho    = uint64(block.timestamp);
-        $.term   = term_;
-        $.vsr    = RAY;
+        $.asset = asset_;
+        $.rho   = uint64(block.timestamp);
+
+        emit CliffSet($.cliff = cliff_);
+        emit TermSet($.term = term_);
+        emit VsrBoundsSet($.minVsr = RAY, $.maxVsr = RAY);
+        emit VsrSet($.vsr = RAY);
+        emit Drip($.chi = uint192(RAY), 0);
 
         _grantRole(DEFAULT_ADMIN_ROLE, admin_);
     }
@@ -163,7 +165,7 @@ contract SparkBoostedVault is ISparkBoostedVault, UUPSUpgradeable, AccessControl
 
         require(cliff_ <= $.term, CliffGreaterThanTerm(cliff_, $.term));
 
-        emit CliffSet(msg.sender, $.cliff = cliff_);
+        emit CliffSet($.cliff = cliff_);
     }
 
     /// @inheritdoc ISparkBoostedVault
@@ -172,7 +174,7 @@ contract SparkBoostedVault is ISparkBoostedVault, UUPSUpgradeable, AccessControl
 
         require(term_ >= $.cliff, CliffGreaterThanTerm($.cliff, term_));
 
-        emit TermSet(msg.sender, $.term = term_);
+        emit TermSet($.term = term_);
     }
 
     /**********************************************************************************************/
@@ -188,7 +190,7 @@ contract SparkBoostedVault is ISparkBoostedVault, UUPSUpgradeable, AccessControl
 
         drip();
 
-        emit VsrSet(msg.sender, $.vsr = vsr_);
+        emit VsrSet($.vsr = vsr_);
     }
 
     /**********************************************************************************************/
