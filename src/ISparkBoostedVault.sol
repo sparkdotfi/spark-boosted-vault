@@ -67,10 +67,9 @@ interface ISparkBoostedVault is IAccessControlEnumerable {
 
     /**
      * @notice Emitted when the vesting cliff is updated.
-     * @param  sender The caller with DEFAULT_ADMIN_ROLE.
-     * @param  cliff  New cliff [seconds].
+     * @param  cliff New cliff [seconds].
      */
-    event CliffSet(address indexed sender, uint64 cliff);
+    event CliffSet(uint64 cliff);
 
     /**
      * @notice Emitted every time drip() is called at a new rho.
@@ -88,10 +87,9 @@ interface ISparkBoostedVault is IAccessControlEnumerable {
 
     /**
      * @notice Emitted when the vesting term is updated.
-     * @param  sender The caller with DEFAULT_ADMIN_ROLE.
-     * @param  term   New term [seconds].
+     * @param  term New term [seconds].
      */
-    event TermSet(address indexed sender, uint64 term);
+    event TermSet(uint64 term);
 
     /**
      * @notice Emitted when the VSR bounds are updated.
@@ -102,10 +100,9 @@ interface ISparkBoostedVault is IAccessControlEnumerable {
 
     /**
      * @notice Emitted when the VSR is updated.
-     * @param  sender The caller with SETTER_ROLE.
-     * @param  vsr    The new VSR [ray].
+     * @param  vsr The new VSR [ray].
      */
-    event VsrSet(address indexed sender, uint256 vsr);
+    event VsrSet(uint256 vsr);
 
     /**
      * @notice Emitted when a withdraw occurs.
