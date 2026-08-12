@@ -535,16 +535,18 @@ contract SparkBoostedVault_UnitTests is Test {
     /*** deposit Tests                                                                          ***/
     /**********************************************************************************************/
 
-    function test_deposit_depositCapExceededBoundary() external {
+    function test_deposit_maxDepositExceededBoundary() external {
         uint256 cap = 1_000_000e6;
 
         vault.__setMaxLiabilityCap(cap);
+
+        assertEq(vault.maxDeposit(), cap);
 
         _mockTransferFrom(asset, user1, address(vault), cap, true);
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                ISparkBoostedVault.MaxLiabilityCapExceeded.selector,
+                ISparkBoostedVault.MaxDepositExceeded.selector,
                 cap + 1,
                 cap
             )
@@ -555,6 +557,34 @@ contract SparkBoostedVault_UnitTests is Test {
 
         vm.prank(user1);
         vault.deposit(cap);
+    }
+
+    function test_deposit_maxDepositExceededBoundary_nonZeroLiability() external {
+        vault.__setMaxLiabilityCap(210_000e6);
+        vault.__setTotalShares(100_000e6);
+        vault.__setChi(1.5e27);
+
+        assertEq(vault.maxLiability(), 150_000e6);
+        assertEq(vault.maxDeposit(),   60_000e6);
+
+        _mockTransferFrom(asset, user1, address(vault), 60_000e6, true);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ISparkBoostedVault.MaxDepositExceeded.selector,
+                60_000e6 + 1,
+                60_000e6
+            )
+        );
+
+        vm.prank(user1);
+        vault.deposit(60_000e6 + 1);
+
+        vm.prank(user1);
+        vault.deposit(60_000e6);
+
+        assertEq(vault.maxLiability(), 210_000e6);
+        assertEq(vault.maxDeposit(),   0);
     }
 
     function test_deposit_zeroDeposit() external {
@@ -891,7 +921,7 @@ contract SparkBoostedVault_UnitTests is Test {
         emit ISparkBoostedVault.Drip(chi, 0);
 
         vm.expectEmit(address(vault));
-        emit ISparkBoostedVault.Withdraw(user1, 1, principal, shares);
+        emit ISparkBoostedVault.Withdraw(user1, 1, recipient, principal, shares);
 
         vm.prank(user1);
         vault.withdraw(1, recipient);
@@ -958,7 +988,7 @@ contract SparkBoostedVault_UnitTests is Test {
         emit ISparkBoostedVault.Drip(chi, 0);
 
         vm.expectEmit(address(vault));
-        emit ISparkBoostedVault.Withdraw(user1, 1, principal + vestedYield, shares);
+        emit ISparkBoostedVault.Withdraw(user1, 1, recipient, principal + vestedYield, shares);
 
         vm.prank(user1);
         vault.withdraw(1, recipient);
@@ -1025,7 +1055,7 @@ contract SparkBoostedVault_UnitTests is Test {
         emit ISparkBoostedVault.Drip(chi, 0);
 
         vm.expectEmit(address(vault));
-        emit ISparkBoostedVault.Withdraw(user1, 1, principal + vestedYield, shares);
+        emit ISparkBoostedVault.Withdraw(user1, 1, recipient, principal + vestedYield, shares);
 
         vm.prank(user1);
         vault.withdraw(1, recipient);
@@ -1089,7 +1119,7 @@ contract SparkBoostedVault_UnitTests is Test {
         emit ISparkBoostedVault.Drip(chi, 0);
 
         vm.expectEmit(address(vault));
-        emit ISparkBoostedVault.Withdraw(user1, 1, principal + vestedYield, shares);
+        emit ISparkBoostedVault.Withdraw(user1, 1, recipient, principal + vestedYield, shares);
 
         vm.prank(user1);
         vault.withdraw(1, recipient);
@@ -1153,7 +1183,7 @@ contract SparkBoostedVault_UnitTests is Test {
         emit ISparkBoostedVault.Drip(chi, 0);
 
         vm.expectEmit(address(vault));
-        emit ISparkBoostedVault.Withdraw(user1, 1, principal + vestedYield, shares);
+        emit ISparkBoostedVault.Withdraw(user1, 1, recipient, principal + vestedYield, shares);
 
         vm.prank(user1);
         vault.withdraw(1, recipient);
@@ -1219,7 +1249,7 @@ contract SparkBoostedVault_UnitTests is Test {
         _expectAndMockTransfer(asset, recipient, withdrawable, true);
 
         vm.expectEmit(address(vault));
-        emit ISparkBoostedVault.Withdraw(user1, 1, withdrawable, shares);
+        emit ISparkBoostedVault.Withdraw(user1, 1, recipient, withdrawable, shares);
 
         vm.prank(user1);
         vault.withdraw(1, recipient);
@@ -1395,7 +1425,7 @@ contract SparkBoostedVault_UnitTests is Test {
         emit ISparkBoostedVault.Drip(chi, 0);
 
         vm.expectEmit(address(vault));
-        emit ISparkBoostedVault.Withdraw(user1, 1, principalPortion, sharePortion);
+        emit ISparkBoostedVault.Withdraw(user1, 1, recipient, principalPortion, sharePortion);
 
         vm.prank(user1);
         vault.withdraw(1, principalPortion, recipient);
@@ -1470,7 +1500,9 @@ contract SparkBoostedVault_UnitTests is Test {
         emit ISparkBoostedVault.Drip(chi, 0);
 
         vm.expectEmit(address(vault));
-        emit ISparkBoostedVault.Withdraw(user1, 1, principalPortion + vestedYield, sharePortion);
+        emit ISparkBoostedVault.Withdraw(
+            user1, 1, recipient, principalPortion + vestedYield, sharePortion
+        );
 
         vm.prank(user1);
         vault.withdraw(1, principalPortion + vestedYield, recipient);
@@ -1545,7 +1577,9 @@ contract SparkBoostedVault_UnitTests is Test {
         emit ISparkBoostedVault.Drip(chi, 0);
 
         vm.expectEmit(address(vault));
-        emit ISparkBoostedVault.Withdraw(user1, 1, principalPortion + vestedYield, sharePortion);
+        emit ISparkBoostedVault.Withdraw(
+            user1, 1, recipient, principalPortion + vestedYield, sharePortion
+        );
 
         vm.prank(user1);
         vault.withdraw(1, principalPortion + vestedYield, recipient);
@@ -1617,7 +1651,13 @@ contract SparkBoostedVault_UnitTests is Test {
         emit ISparkBoostedVault.Drip(chi, 0);
 
         vm.expectEmit(address(vault));
-        emit ISparkBoostedVault.Withdraw(user1, 1, principalPortion + vestedYield, sharePortion);
+        emit ISparkBoostedVault.Withdraw(
+            user1,
+            1,
+            recipient,
+            principalPortion + vestedYield,
+            sharePortion
+        );
 
         vm.prank(user1);
         vault.withdraw(1, principalPortion + vestedYield, recipient);
@@ -1689,7 +1729,13 @@ contract SparkBoostedVault_UnitTests is Test {
         emit ISparkBoostedVault.Drip(chi, 0);
 
         vm.expectEmit(address(vault));
-        emit ISparkBoostedVault.Withdraw(user1, 1, principalPortion + vestedYield, sharePortion);
+        emit ISparkBoostedVault.Withdraw(
+            user1,
+            1,
+            recipient,
+            principalPortion + vestedYield,
+            sharePortion
+        );
 
         vm.prank(user1);
         vault.withdraw(1, principalPortion + vestedYield, recipient);
@@ -1769,7 +1815,7 @@ contract SparkBoostedVault_UnitTests is Test {
             _expectAndMockTransfer(asset, recipient, withdrawAmount, true);
 
             vm.expectEmit(address(vault));
-            emit ISparkBoostedVault.Withdraw(user1, 1, withdrawAmount, sharePortion);
+            emit ISparkBoostedVault.Withdraw(user1, 1, recipient, withdrawAmount, sharePortion);
         } else {
             vm.expectRevert(
                 abi.encodeWithSelector(

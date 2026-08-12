@@ -272,7 +272,7 @@ contract SparkBoostedVault is ISparkBoostedVault, UUPSUpgradeable, AccessControl
     }
 
     /// @inheritdoc ISparkBoostedVault
-    function maxDeposit() external view override returns (uint256) {
+    function maxDeposit() public view override returns (uint256) {
         uint256 maxLiability_    = maxLiability();
         uint256 maxLiabilityCap_ = _getVaultStorage().maxLiabilityCap;
 
@@ -447,12 +447,9 @@ contract SparkBoostedVault is ISparkBoostedVault, UUPSUpgradeable, AccessControl
 
         VaultStorage storage $ = _getVaultStorage();
 
-        uint256 maxLiability_ = maxLiability();
+        uint256 maxDeposit_ = maxDeposit();
 
-        require(
-            maxLiability_ + assets_ <= $.maxLiabilityCap,
-            MaxLiabilityCapExceeded(maxLiability_ + assets_, $.maxLiabilityCap)
-        );
+        require(assets_ <= maxDeposit_, MaxDepositExceeded(assets_, maxDeposit_));
 
         positionId_ = ++$.positionCount;
 
@@ -523,7 +520,7 @@ contract SparkBoostedVault is ISparkBoostedVault, UUPSUpgradeable, AccessControl
         $.totalShares    -= sharePortion_;
         $.totalPrincipal -= principalPortion_;
 
-        emit Withdraw(msg.sender, positionId_, assets_, sharePortion_);
+        emit Withdraw(msg.sender, positionId_, recipient_, assets_, sharePortion_);
 
         _pushAsset(recipient_, assets_);
     }
