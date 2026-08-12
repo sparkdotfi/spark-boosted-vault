@@ -214,6 +214,40 @@ contract SparkBoostedVault_UnitTests is Test {
         assertEq(vault.getRoleMember(DEFAULT_ADMIN_ROLE, 0),   admin);
     }
 
+    function test_initialize_events() external {
+        address deployer      = makeAddr("deployer");
+        address expectedProxy = computeCreateAddress(deployer, 0);
+
+        vm.expectEmit(expectedProxy);
+        emit ISparkBoostedVault.CliffSet(CLIFF);
+
+        vm.expectEmit(expectedProxy);
+        emit ISparkBoostedVault.TermSet(TERM);
+
+        vm.expectEmit(expectedProxy);
+        emit ISparkBoostedVault.VsrBoundsSet(RAY, RAY);
+
+        vm.expectEmit(expectedProxy);
+        emit ISparkBoostedVault.VsrSet(RAY);
+
+        vm.expectEmit(expectedProxy);
+        emit ISparkBoostedVault.Drip(uint192(RAY), 0);
+
+        vm.expectEmit(expectedProxy);
+        emit IAccessControl.RoleGranted(DEFAULT_ADMIN_ROLE, admin, deployer);
+
+        vm.expectEmit(expectedProxy);
+        emit Initializable.Initialized(1);
+
+        vm.prank(deployer);
+        address proxy = address(new ERC1967Proxy(
+            implementation,
+            abi.encodeCall(SparkBoostedVault.initialize, (asset, admin, TERM, CLIFF))
+        ));
+
+        assertEq(proxy, expectedProxy);
+    }
+
     /**********************************************************************************************/
     /*** setMaxLiabilityCap Tests                                                               ***/
     /**********************************************************************************************/
@@ -360,7 +394,7 @@ contract SparkBoostedVault_UnitTests is Test {
         emit ISparkBoostedVault.Drip(RAY, 0);
 
         vm.expectEmit(address(vault));
-        emit ISparkBoostedVault.VsrSet(setter, FOUR_PCT_VSR);
+        emit ISparkBoostedVault.VsrSet(FOUR_PCT_VSR);
 
         vm.prank(setter);
         vault.setVsr(FOUR_PCT_VSR);
@@ -405,7 +439,7 @@ contract SparkBoostedVault_UnitTests is Test {
         uint64 cliff = 180 days;
 
         vm.expectEmit(address(vault));
-        emit ISparkBoostedVault.CliffSet(admin, cliff);
+        emit ISparkBoostedVault.CliffSet(cliff);
 
         vm.prank(admin);
         vault.setCliff(cliff);
@@ -445,7 +479,7 @@ contract SparkBoostedVault_UnitTests is Test {
         uint64 term = 600 days;
 
         vm.expectEmit(address(vault));
-        emit ISparkBoostedVault.TermSet(admin, term);
+        emit ISparkBoostedVault.TermSet(term);
 
         vm.prank(admin);
         vault.setTerm(term);
@@ -2416,6 +2450,25 @@ contract SparkBoostedVault_UnitTests is Test {
         vault.__setMaxLiabilityCap(100_000e6);
 
         assertEq(vault.maxDeposit(), 0);
+    }
+
+    function test_getter_maxDeposit_minDepositBoundary() external {
+        vault.__setMaxLiabilityCap(150_000e6);
+        vault.__setTotalShares(100_000e6);
+        vault.__setChi(1.5e27);
+
+        // A `chi` of 1.5 RAY requires at least two asset units to mint a single share.
+        assertEq(vault.maxLiability(), 150_000e6);
+        assertEq(vault.maxDeposit(),   0);
+
+        // One unit of remaining capacity would mint zero shares, so the vault is at capacity.
+        vault.__setMaxLiabilityCap(150_000e6 + 1);
+
+        assertEq(vault.maxDeposit(), 0);
+
+        vault.__setMaxLiabilityCap(150_000e6 + 2);
+
+        assertEq(vault.maxDeposit(), 2);
     }
 
     function test_getter_maxLiability() external {
