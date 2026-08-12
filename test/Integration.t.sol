@@ -5,20 +5,23 @@ import { Test } from "../lib/forge-std/src/Test.sol";
 
 import { ERC20Mock }    from "../lib/oz/contracts/mocks/token/ERC20Mock.sol";
 import { ERC1967Proxy } from "../lib/oz/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import { Math }         from "../lib/oz/contracts/utils/math/Math.sol";
 
 import { SparkBoostedVault }  from "../src/SparkBoostedVault.sol";
 import { ISparkBoostedVault } from "../src/ISparkBoostedVault.sol";
 
 contract SparkBoostedVaultIntegrationTests is Test {
 
-    uint256 internal constant RAY          = 1e27;
-    uint256 internal constant ONE_PCT_VSR  = 1.000000000315522921573372069e27;
-    uint256 internal constant FOUR_PCT_VSR = 1.000000001243680656318820312e27;
-    uint256 internal constant TEN_PCT_VSR  = 1.000000003022265980097387650e27;
-    uint256 internal constant MAX_VSR      = 1.000000021979553151239153027e27;
+    uint256 internal constant RAY           = 1e27;
+    uint256 internal constant ONE_PCT_VSR   = 1.000000000315522921573372069e27;
+    uint256 internal constant TWO_PCT_VSR   = 1.000000000627937192491029810e27;
+    uint256 internal constant FOUR_PCT_VSR  = 1.000000001243680656318820312e27;
+    uint256 internal constant EIGHT_PCT_VSR = 1.000000002440418608258400030e27;
+    uint256 internal constant TEN_PCT_VSR   = 1.000000003022265980097387650e27;
+    uint256 internal constant MAX_VSR       = 1.000000021979553151239153027e27;
 
-    uint64 internal constant TERM  = 365 days;
-    uint64 internal constant CLIFF = 90 days;
+    uint64 internal constant TERM  = 4 * 365 days;
+    uint64 internal constant CLIFF = 365 days;
 
     address internal admin  = makeAddr("admin");
     address internal setter = makeAddr("setter");
@@ -86,6 +89,266 @@ contract SparkBoostedVaultIntegrationTests is Test {
     /**********************************************************************************************/
     /*** Single user e2e tests                                                                  ***/
     /**********************************************************************************************/
+
+    function test_e2e_vsrIncreased() external {
+        uint256 startingTimestamp = block.timestamp;
+
+        _setVsr(FOUR_PCT_VSR);
+
+        uint256 positionId = _deposit(user1, 1_000_000e6);
+
+        _assertAccounting({
+            positionId          : positionId,
+            expectedFullYield   : 0,
+            expectedVestedYield : 0,
+            expectedMultiplier  : 0
+        });
+
+        vm.warp(startingTimestamp + CLIFF);
+
+        _assertAccounting({
+            positionId          : positionId,
+            expectedFullYield   : 39_999.999999e6,  // 4%
+            expectedVestedYield : 2499.999999e6,    // 1/16th of the full yield
+            expectedMultiplier  : 0.0625e27         // 1 / (4^2) = 0.0625
+        });
+
+        _setVsr(EIGHT_PCT_VSR);
+
+        _assertAccounting({
+            positionId          : positionId,
+            expectedFullYield   : 39_999.999999e6,  // 4%
+            expectedVestedYield : 2499.999999e6,    // 1/16th of the full yield
+            expectedMultiplier  : 0.0625e27         // 1 / (4^2) = 0.0625
+        });
+
+        vm.warp(startingTimestamp + TERM / 2);
+
+        _assertAccounting({
+            positionId          : positionId,
+            expectedFullYield   : 123_199.999999e6,  // 1.04 * 1.08 = 1.1232
+            expectedVestedYield : 30_799.999999e6,   // 1/4 of full yield
+            expectedMultiplier  : 0.25e27            // 1 / (2^2) = 0.25
+        });
+    }
+
+    function test_e2e_vsrDecreased() external {
+        uint256 startingTimestamp = block.timestamp;
+
+        _setVsr(FOUR_PCT_VSR);
+
+        uint256 positionId = _deposit(user1, 1_000_000e6);
+
+        _assertAccounting({
+            positionId          : positionId,
+            expectedFullYield   : 0,
+            expectedVestedYield : 0,
+            expectedMultiplier  : 0
+        });
+
+        vm.warp(startingTimestamp + CLIFF);
+
+        _assertAccounting({
+            positionId          : positionId,
+            expectedFullYield   : 39_999.999999e6,  // 4%
+            expectedVestedYield : 2499.999999e6,    // 1/16th of the full yield
+            expectedMultiplier  : 0.0625e27         // 1 / (4^2) = 0.0625
+        });
+
+        _setVsr(TWO_PCT_VSR);
+
+        _assertAccounting({
+            positionId          : positionId,
+            expectedFullYield   : 39_999.999999e6,  // 4%
+            expectedVestedYield : 2499.999999e6,    // 1/16th of the full yield
+            expectedMultiplier  : 0.0625e27         // 1 / (4^2) = 0.0625
+        });
+
+        vm.warp(startingTimestamp + TERM / 2);
+
+        _assertAccounting({
+            positionId          : positionId,
+            expectedFullYield   : 60_799.999999e6,  // 1.04 * 1.02 = 1.0608
+            expectedVestedYield : 15_199.999999e6,  // 1/4 of full yield
+            expectedMultiplier  : 0.25e27           // 1 / (2^2) = 0.25
+        });
+    }
+
+    function test_e2e_cliffDecreased() external {
+        uint256 startingTimestamp = block.timestamp;
+
+        uint256 positionId = _deposit(user1, 1_000_000e6);
+
+        _setVsr(FOUR_PCT_VSR);
+
+        _assertAccounting({
+            positionId          : positionId,
+            expectedFullYield   : 0,
+            expectedVestedYield : 0,
+            expectedMultiplier  : 0
+        });
+
+        vm.warp(startingTimestamp + CLIFF);
+
+        _assertAccounting({
+            positionId          : positionId,
+            expectedFullYield   : 39_999.999999e6,  // 4%
+            expectedVestedYield : 2499.999999e6,    // 1/16th of the full yield
+            expectedMultiplier  : 0.0625e27         // 1 / (4^2) = 0.0625
+        });
+
+        vm.prank(admin);
+        vault.setCliff(0);
+
+        _assertAccounting({
+            positionId          : positionId,
+            expectedFullYield   : 39_999.999999e6, // 4%
+            expectedVestedYield : 2499.999999e6,   // 1/16th of the full yield
+            expectedMultiplier  : 0.0625e27        // 1 / (4^2) = 0.0625
+        });
+
+        vm.warp(startingTimestamp + TERM / 2);
+
+        _assertAccounting({
+            positionId          : positionId,
+            expectedFullYield   : 81_599.999999e6,  // 1.04 * 1.04 = 1.0816
+            expectedVestedYield : 20_399.999999e6,  // 1/4 of full yield
+            expectedMultiplier  : 0.25e27           // 1 / (2^2) = 0.25
+        });
+    }
+
+    function test_e2e_cliffIncreased() external {
+        uint256 startingTimestamp = block.timestamp;
+
+        uint256 positionId = _deposit(user1, 1_000_000e6);
+
+        _setVsr(FOUR_PCT_VSR);
+
+        _assertAccounting({
+            positionId          : positionId,
+            expectedFullYield   : 0,
+            expectedVestedYield : 0,
+            expectedMultiplier  : 0
+        });
+
+        vm.warp(startingTimestamp + CLIFF);
+
+        _assertAccounting({
+            positionId          : positionId,
+            expectedFullYield   : 39_999.999999e6,  // 4%
+            expectedVestedYield : 2499.999999e6,    // 1/16th of the full yield
+            expectedMultiplier  : 0.0625e27         // 1 / (4^2) = 0.0625
+        });
+
+        vm.prank(admin);
+        vault.setCliff(2 * 365 days);
+
+        _assertAccounting({
+            positionId          : positionId,
+            expectedFullYield   : 39_999.999999e6,  // 4%
+            expectedVestedYield : 0,
+            expectedMultiplier  : 0
+        });
+
+        vm.warp(startingTimestamp + TERM / 2);
+
+        _assertAccounting({
+            positionId          : positionId,
+            expectedFullYield   : 81_599.999999e6,  // 1.04 * 1.04 = 1.0816
+            expectedVestedYield : 20_399.999999e6,  // 1/4 of full yield
+            expectedMultiplier  : 0.25e27           // 1 / (2^2) = 0.25
+        });
+    }
+
+    function test_e2e_termDecreased() external {
+        uint256 startingTimestamp = block.timestamp;
+
+        uint256 positionId = _deposit(user1, 1_000_000e6);
+
+        _setVsr(FOUR_PCT_VSR);
+
+        _assertAccounting({
+            positionId          : positionId,
+            expectedFullYield   : 0,
+            expectedVestedYield : 0,
+            expectedMultiplier  : 0
+        });
+
+        vm.warp(startingTimestamp + CLIFF);
+
+        _assertAccounting({
+            positionId          : positionId,
+            expectedFullYield   : 39_999.999999e6,  // 4%
+            expectedVestedYield : 2499.999999e6,    // 1/16th of the full yield
+            expectedMultiplier  : 0.0625e27         // 1 / (4^2) = 0.0625
+        });
+
+        uint64 newTerm = 2 * 365 days;
+
+        vm.prank(admin);
+        vault.setTerm(newTerm);
+
+        _assertAccounting({
+            positionId          : positionId,
+            expectedFullYield   : 39_999.999999e6,  // 4%
+            expectedVestedYield : 9_999.999999e6,   // 1/4th of the full yield
+            expectedMultiplier  : 0.25e27           // 1 / (2^2) = 0.25
+        });
+
+        vm.warp(startingTimestamp + newTerm);  // 2 years
+
+        _assertAccounting({
+            positionId          : positionId,
+            expectedFullYield   : 81_599.999999e6,  // 1.04 * 1.04 = 1.0816
+            expectedVestedYield : 81_599.999999e6,  // Full yield
+            expectedMultiplier  : RAY
+        });
+    }
+
+    function test_e2e_termIncreased() external {
+        uint256 startingTimestamp = block.timestamp;
+
+        uint256 positionId = _deposit(user1, 1_000_000e6);
+
+        _setVsr(FOUR_PCT_VSR);
+
+        _assertAccounting({
+            positionId          : positionId,
+            expectedFullYield   : 0,
+            expectedVestedYield : 0,
+            expectedMultiplier  : 0
+        });
+
+        vm.warp(startingTimestamp + CLIFF);
+
+        _assertAccounting({
+            positionId          : positionId,
+            expectedFullYield   : 39_999.999999e6,  // 4%
+            expectedVestedYield : 2499.999999e6,    // 1/16th of the full yield
+            expectedMultiplier  : 0.0625e27         // 1 / (4^2) = 0.0625
+        });
+
+        uint64 newTerm = 8 * 365 days;
+
+        vm.prank(admin);
+        vault.setTerm(newTerm);
+
+        _assertAccounting({
+            positionId          : positionId,
+            expectedFullYield   : 39_999.999999e6,  // 4%
+            expectedVestedYield : 624.999999e6,     // 1/64th of the full yield
+            expectedMultiplier  : 0.015625e27       // 1 / (8^2) = 0.015625
+        });
+
+        vm.warp(startingTimestamp + newTerm / 2);  // 4 years
+
+        _assertAccounting({
+            positionId          : positionId,
+            expectedFullYield   : 169_858.559999e6,  // 1.04^4
+            expectedVestedYield : 42_464.639999e6,   // 1/4 of full yield
+            expectedMultiplier  : 0.25e27            // 1 / (2^2) = 0.25
+        });
+    }
 
     function test_e2e_singleUser_withdrawFullTerm() external {
         uint256 principal = 100_000e6;
@@ -211,6 +474,56 @@ contract SparkBoostedVaultIntegrationTests is Test {
         assertEq(vault.maxLiability(),            0);
     }
 
+    function testFuzz_e2e_singleUser_elapsed(uint256 elapsed) external {
+        elapsed = bound(elapsed, 1, 2 * TERM);
+
+        uint256 principal = 100_000e6;
+
+        _setVsr(FOUR_PCT_VSR);
+
+        // Step 1: User 1 deposits and waits for elapsed time
+
+        uint256 positionId = _deposit(user1, principal);
+
+        // Step 2: Wait for elapsed time
+
+        skip(elapsed);
+
+        // Step 3: User withdraws completely
+
+        uint256 multiplier = vault.vestingMultiplierOf(positionId);
+        uint256 yield      = vault.yieldOf(positionId);
+
+        if (elapsed >= TERM) {
+            assertEq(multiplier, RAY);
+        } else if (elapsed >= CLIFF && elapsed < TERM) {
+            assertGt(multiplier, 0);
+            assertLt(multiplier, RAY);
+        } else {
+            assertEq(multiplier, 0);
+        }
+
+        uint256 expectedVested        = yield * multiplier / RAY;
+        uint256 expectedUnvestedYield = yield - expectedVested;
+
+        assertEq(vault.vestedYieldOf(positionId),   expectedVested);
+        assertEq(vault.unvestedYieldOf(positionId), expectedUnvestedYield);
+        assertEq(vault.withdrawableOf(positionId),  principal + expectedVested);
+
+        _fundVaultToTotalAssets();
+
+        assertEq(asset.balanceOf(user1),          0);
+        assertEq(asset.balanceOf(address(vault)), principal + yield);
+        assertEq(vault.maxLiability(),            principal + yield);
+
+        vm.prank(user1);
+        vault.withdraw(positionId, user1);
+
+        assertEq(asset.balanceOf(user1),          principal + expectedVested);
+        assertEq(asset.balanceOf(address(vault)), expectedUnvestedYield);
+        assertEq(vault.maxLiability(),            0);
+    }
+
     function test_e2e_singleUser_redepositsAfterFullExit() external {
         uint256 principal = 100_000e6;
 
@@ -263,6 +576,59 @@ contract SparkBoostedVaultIntegrationTests is Test {
 
         assertEq(asset.balanceOf(user1), withdrawal2);
         assertEq(vault.maxLiability(),   0);
+    }
+
+    function testFuzz_e2e_singleUser_exitsPartiallyMidVesting(uint256 withdrawAmount, uint256 elapsed) external {
+        uint256 principal = 100_000e6;
+
+        withdrawAmount = bound(withdrawAmount, 1e6, principal);
+        elapsed        = bound(elapsed, CLIFF + 1, TERM - 1);
+
+        _setVsr(FOUR_PCT_VSR);
+
+        // Step 1: User 1 deposits
+        uint256 positionId = _deposit(user1, principal);
+
+        // Step 2: Wait for elapsed time
+        skip(elapsed);
+
+        // Step 3: User withdraws partially
+        uint256 multiplier   = vault.vestingMultiplierOf(positionId);
+        uint256 yield        = vault.yieldOf(positionId);
+        uint256 withdrawable = vault.withdrawableOf(positionId);
+
+        assertGt(multiplier, 0);
+        assertLt(multiplier, RAY);
+
+        uint256 expectedVested        = yield * multiplier / RAY;
+        uint256 expectedUnvestedYield = yield - expectedVested;
+
+        assertEq(vault.vestedYieldOf(positionId),   expectedVested);
+        assertEq(vault.unvestedYieldOf(positionId), expectedUnvestedYield);
+        assertEq(vault.withdrawableOf(positionId),  principal + expectedVested);
+
+        _fundVaultToTotalAssets();
+
+        assertEq(asset.balanceOf(user1),          0);
+        assertEq(asset.balanceOf(address(vault)), principal + yield);
+
+        ISparkBoostedVault.Position memory positionBefore = vault.getPosition(positionId);
+
+        assertEq(positionBefore.principal,   principal);
+        assertEq(positionBefore.shares,      principal);
+        assertEq(positionBefore.depositTime, uint64(block.timestamp) - elapsed);
+
+        vm.prank(user1);
+        vault.withdraw(positionId, withdrawAmount, user1);
+
+        ISparkBoostedVault.Position memory position = vault.getPosition(positionId);
+
+        assertEq(position.principal,   principal - Math.ceilDiv(positionBefore.principal * withdrawAmount, withdrawable));
+        assertEq(position.shares,      principal - Math.ceilDiv(positionBefore.shares * withdrawAmount, withdrawable));
+        assertEq(position.depositTime, uint64(block.timestamp) - elapsed);
+
+        assertEq(asset.balanceOf(user1),          withdrawAmount);
+        assertEq(asset.balanceOf(address(vault)), principal + yield - withdrawAmount);
     }
 
     /**********************************************************************************************/
@@ -346,6 +712,132 @@ contract SparkBoostedVaultIntegrationTests is Test {
 
         assertEq(vault.totalPrincipal(), 0);
         assertEq(vault.maxLiability(),   0);
+    }
+
+    function test_e2e_twoUsers_partialWithdrawals() external {
+        uint256 principal1 = 100_000e6;
+        uint256 principal2 = 200_000e6;
+
+        // Step 1: Two users deposit simultaneously
+
+        uint256 positionId1 = _deposit(user1, principal1);
+        uint256 positionId2 = _deposit(user2, principal2);
+
+        _setVsr(FOUR_PCT_VSR);
+
+        assertEq(vault.totalShares(),    principal1 + principal2);
+        assertEq(vault.totalPrincipal(), principal1 + principal2);
+        assertEq(vault.maxLiability(),   principal1 + principal2);
+
+        // Step 2: Warp to mid term and snapshot state
+
+        skip(TERM / 2);
+
+        uint256 snapshot = vm.snapshotState();
+
+        // Step 3: User 1 fully exits mid term
+
+        _fundVaultToTotalAssets();
+
+        ISparkBoostedVault.Position memory user1PositionBefore = vault.getPosition(positionId1);
+        ISparkBoostedVault.Position memory user2PositionBefore = vault.getPosition(positionId2);
+
+        assertEq(user1PositionBefore.principal,   principal1);
+        assertEq(user1PositionBefore.shares,      principal1);
+        assertEq(user1PositionBefore.depositTime, uint64(block.timestamp) - (TERM / 2));
+
+        assertEq(user2PositionBefore.principal,   principal2);
+        assertEq(user2PositionBefore.shares,      principal2);
+        assertEq(user2PositionBefore.depositTime, uint64(block.timestamp) - (TERM / 2));
+
+        assertEq(asset.balanceOf(user1), 0);
+        assertEq(asset.balanceOf(user2), 0);
+
+        uint256 withdrawableOfUser1 = vault.withdrawableOf(positionId1);
+
+        assertEq(withdrawableOfUser1, principal1 + 2_039.999999e6);
+
+        vm.prank(user1);
+        vault.withdraw(positionId1, user1);
+
+        ISparkBoostedVault.Position memory user1PositionAfter = vault.getPosition(positionId1);
+        ISparkBoostedVault.Position memory user2PositionAfter = vault.getPosition(positionId2);
+
+        assertEq(user1PositionAfter.principal,   0);
+        assertEq(user1PositionAfter.shares,      0);
+        assertEq(user1PositionAfter.depositTime, 0);
+
+        assertEq(user2PositionAfter.principal,   principal2);
+        assertEq(user2PositionAfter.shares,      principal2);
+        assertEq(user2PositionAfter.depositTime, uint64(block.timestamp) - (TERM / 2));
+
+        assertEq(asset.balanceOf(user1), withdrawableOfUser1);
+        assertEq(asset.balanceOf(user2), 0);
+
+        // Step 4: Revert to snapshot
+
+        vm.revertTo(snapshot);
+
+        // Step 5: User 1 partially withdraws mid term
+
+        uint256 user1WithdrawAmount = 50_000e6;
+
+        _fundVaultToTotalAssets();
+
+        vm.prank(user1);
+        vault.withdraw(positionId1, user1WithdrawAmount, user1);
+
+        user1PositionAfter = vault.getPosition(positionId1);
+        user2PositionAfter = vault.getPosition(positionId2);
+
+        assertEq(user1PositionAfter.principal,   principal1 - Math.ceilDiv(user1PositionBefore.principal * user1WithdrawAmount, withdrawableOfUser1));
+        assertEq(user1PositionAfter.shares,      principal1 - Math.ceilDiv(user1PositionBefore.shares * user1WithdrawAmount, withdrawableOfUser1));
+        assertEq(user1PositionAfter.depositTime, uint64(block.timestamp) - (TERM / 2));
+
+        assertEq(user2PositionAfter.principal,   principal2);
+        assertEq(user2PositionAfter.shares,      principal2);
+        assertEq(user2PositionAfter.depositTime, uint64(block.timestamp) - (TERM / 2));
+
+        assertEq(asset.balanceOf(user1), user1WithdrawAmount);
+        assertEq(asset.balanceOf(user2), 0);
+
+        // Step 6: User 1 fully exits
+
+        _fundVaultToTotalAssets();
+
+        vm.prank(user1);
+        vault.withdraw(positionId1, user1);
+
+        user1PositionAfter = vault.getPosition(positionId1);
+        user2PositionAfter = vault.getPosition(positionId2);
+
+        assertEq(user1PositionAfter.principal,   0);
+        assertEq(user1PositionAfter.shares,      0);
+        assertEq(user1PositionAfter.depositTime, 0);
+
+        assertEq(user2PositionAfter.principal,   principal2);
+        assertEq(user2PositionAfter.shares,      principal2);
+        assertEq(user2PositionAfter.depositTime, uint64(block.timestamp) - (TERM / 2));
+
+        assertEq(asset.balanceOf(user1), withdrawableOfUser1);
+        assertEq(asset.balanceOf(user2), 0);
+    }
+
+    /**********************************************************************************************/
+    /*** Helper Functions                                                                       ***/
+    /**********************************************************************************************/
+
+    function _assertAccounting(
+        uint256 positionId,
+        uint256 expectedFullYield,
+        uint256 expectedVestedYield,
+        uint256 expectedMultiplier
+    )
+        internal view
+    {
+        assertEq(vault.yieldOf(positionId),             expectedFullYield);
+        assertEq(vault.vestedYieldOf(positionId),       expectedVestedYield);
+        assertEq(vault.vestingMultiplierOf(positionId), expectedMultiplier);
     }
 
 }

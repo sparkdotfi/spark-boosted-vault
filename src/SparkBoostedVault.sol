@@ -115,20 +115,22 @@ contract SparkBoostedVault is ISparkBoostedVault, UUPSUpgradeable, AccessControl
         override
         initializer
     {
+        __AccessControlEnumerable_init();
+
         require(asset_ != address(0), ZeroAsset());
         require(admin_ != address(0), ZeroAdmin());
         require(cliff_ <= term_,      CliffGreaterThanTerm(cliff_, term_));
 
         VaultStorage storage $ = _getVaultStorage();
 
-        $.asset  = asset_;
-        $.chi    = uint192(RAY);
-        $.cliff  = cliff_;
-        $.maxVsr = RAY;
-        $.minVsr = RAY;
-        $.rho    = uint64(block.timestamp);
-        $.term   = term_;
-        $.vsr    = RAY;
+        $.asset = asset_;
+        $.rho   = uint64(block.timestamp);
+
+        emit CliffSet($.cliff = cliff_);
+        emit TermSet($.term = term_);
+        emit VsrBoundsSet($.minVsr = RAY, $.maxVsr = RAY);
+        emit VsrSet($.vsr = RAY);
+        emit Drip($.chi = uint192(RAY), 0);
 
         _grantRole(DEFAULT_ADMIN_ROLE, admin_);
     }
@@ -163,7 +165,7 @@ contract SparkBoostedVault is ISparkBoostedVault, UUPSUpgradeable, AccessControl
 
         require(cliff_ <= $.term, CliffGreaterThanTerm(cliff_, $.term));
 
-        emit CliffSet(msg.sender, $.cliff = cliff_);
+        emit CliffSet($.cliff = cliff_);
     }
 
     /// @inheritdoc ISparkBoostedVault
@@ -172,7 +174,7 @@ contract SparkBoostedVault is ISparkBoostedVault, UUPSUpgradeable, AccessControl
 
         require(term_ >= $.cliff, CliffGreaterThanTerm($.cliff, term_));
 
-        emit TermSet(msg.sender, $.term = term_);
+        emit TermSet($.term = term_);
     }
 
     /**********************************************************************************************/
@@ -188,7 +190,7 @@ contract SparkBoostedVault is ISparkBoostedVault, UUPSUpgradeable, AccessControl
 
         drip();
 
-        emit VsrSet(msg.sender, $.vsr = vsr_);
+        emit VsrSet($.vsr = vsr_);
     }
 
     /**********************************************************************************************/
@@ -270,11 +272,17 @@ contract SparkBoostedVault is ISparkBoostedVault, UUPSUpgradeable, AccessControl
     }
 
     /// @inheritdoc ISparkBoostedVault
-    function maxDeposit() external view override returns (uint256) {
+    function maxDeposit() public view override returns (uint256) {
         uint256 maxLiability_    = maxLiability();
         uint256 maxLiabilityCap_ = _getVaultStorage().maxLiabilityCap;
 
-        return maxLiabilityCap_ > maxLiability_ ? maxLiabilityCap_ - maxLiability_ : 0;
+        if (maxLiability_ >= maxLiabilityCap_) return 0;
+
+        uint256 remainingCapacity_ = maxLiabilityCap_ - maxLiability_;
+        uint256 minDeposit_        = Math.ceilDiv(nowChi(), RAY);
+
+        // Require at least minDeposit to mint 1 share; otherwise return 0 if at capacity.
+        return remainingCapacity_ >= minDeposit_ ? remainingCapacity_ : 0;
     }
 
     /// @inheritdoc ISparkBoostedVault
@@ -439,12 +447,9 @@ contract SparkBoostedVault is ISparkBoostedVault, UUPSUpgradeable, AccessControl
 
         VaultStorage storage $ = _getVaultStorage();
 
-        uint256 maxLiability_ = maxLiability();
+        uint256 maxDeposit_ = maxDeposit();
 
-        require(
-            maxLiability_ + assets_ <= $.maxLiabilityCap,
-            MaxLiabilityCapExceeded(maxLiability_ + assets_, $.maxLiabilityCap)
-        );
+        require(assets_ <= maxDeposit_, MaxDepositExceeded(assets_, maxDeposit_));
 
         positionId_ = ++$.positionCount;
 
@@ -515,7 +520,7 @@ contract SparkBoostedVault is ISparkBoostedVault, UUPSUpgradeable, AccessControl
         $.totalShares    -= sharePortion_;
         $.totalPrincipal -= principalPortion_;
 
-        emit Withdraw(msg.sender, positionId_, assets_, sharePortion_);
+        emit Withdraw(msg.sender, positionId_, recipient_, assets_, sharePortion_);
 
         _pushAsset(recipient_, assets_);
     }

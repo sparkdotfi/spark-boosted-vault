@@ -9,7 +9,7 @@
 
 ## Overview
 
-Spark Boosted Vault is a multi-position, per-user vesting vault. Each user's yield is gated by a custom vesting curve defined by two duration parameters: a **cliff** and a **term**.
+Spark Boosted Vault is a multi-position, per-user vesting vault. Each user's yield is gated by a custom vesting curve defined by two duration parameters: a **cliff** and a **term**. These parameters can be updated at any time after initialization by an account with default admin role privileges (`DEFAULT_ADMIN_ROLE`). While changing these values will not affect the total yield of an open position, it will affect the portion that is considered vested and unvested, either favorably or unfavorably for the position holder, depending on the change.
 
 While deposited principal is always fully withdrawable, accrued yield is multiplied by a **quadratic ease-in curve** `(elapsed / term)²` ranging from `0` to `1` over the `[0, term]` duration. Any exit before the cliff forfeits 100% of the accrued yield, and early exits before the term forfeit a quadratic portion of the yield. The forfeited yield remains in the vault, increasing the surplus. The authorized `TAKER_ROLE` can withdraw assets from the vault (up to the total contract balance) via the `take` function. Importantly, the `take` function is implemented as an unrestricted balance withdrawal of the underlying asset rather than a restricted harvest of surplus. This design requires trusting the `TAKER` to manage the withdrawn assets and return them to the vault as needed to satisfy user withdrawals.
 
@@ -54,7 +54,7 @@ SparkBoostedVault
 
 ## Roles & Permissions
 
-- **`DEFAULT_ADMIN_ROLE`**: Can upgrade the implementation, set the maximum liability cap, and update the VSR bounds (`minVsr` / `maxVsr`).
+- **`DEFAULT_ADMIN_ROLE`**: Can upgrade the implementation, set the maximum liability cap, update the VSR bounds (`minVsr` / `maxVsr`), and change the vault's `cliff` and `term` parameters at any time.
 - **`SETTER_ROLE`**: Can update the active Vault Savings Rate (`vsr`) within the allowed bounds.
 - **`TAKER_ROLE`**: Can withdraw any amount of assets from the vault (up to the current balance) using `take()`, with the expectation to manage/invest them and return liquidity as needed to satisfy withdrawals.
 
