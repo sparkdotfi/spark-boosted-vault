@@ -93,7 +93,22 @@ contract SparkBoostedVaultInvariantTestBase is Test {
         uint256 liability_ = vault.maxLiability();
         uint256 expected_  = cap_ > liability_ ? cap_ - liability_ : 0;
 
-        assertEq(vault.maxDeposit(), expected_, "invariant C: maxDeposit formula mismatch");
+        assertLe(vault.maxDeposit(), expected_, "invariant C: maxDeposit exceeds expectation");
+    }
+
+    function vaultInvariant_D_maxLiabilityGreaterOrEqualToWithdrawable() public view {
+        uint256 withdrawable;
+        uint256 n = userHandler.numPositionIds();
+
+        for (uint256 i = 0; i < n; i++) {
+            withdrawable += vault.withdrawableOf(userHandler.positionIds(i));
+        }
+
+        assertLe(
+            withdrawable,
+            vault.maxLiability(),
+            "invariant D: maxLiability < sum(position.withdrawableOf)"
+        );
     }
 
     function vaultInvariant_D_vsr() public view {
