@@ -91,31 +91,99 @@ contract SparkBoostedVaultInvariantTestBase is Test {
     function vaultInvariant_C_maxDepositFormula() public view {
         uint256 cap_       = vault.maxLiabilityCap();
         uint256 liability_ = vault.maxLiability();
-        uint256 expected_  = cap_ > liability_ ? cap_ - liability_ : 0;
+        uint256 nowChi_    = vault.nowChi();
+        uint256 actual_    = vault.maxDeposit();
 
-        assertLe(vault.maxDeposit(), expected_, "invariant C: maxDeposit exceeds expectation");
-    }
+        // Exact mirror of the documented behavior: remaining capacity, zeroed when the vault is
+        // at capacity or when the remaining capacity cannot mint at least one share.
+        uint256 expected_;
+        if (liability_ < cap_) {
+            uint256 remaining_  = cap_ - liability_;
+            uint256 minDeposit_ = (nowChi_ + RAY - 1) / RAY;
 
-    function vaultInvariant_D_maxLiabilityGreaterOrEqualToWithdrawable() public view {
-        uint256 withdrawable;
-        uint256 n = userHandler.numPositionIds();
-
-        for (uint256 i = 0; i < n; i++) {
-            withdrawable += vault.withdrawableOf(userHandler.positionIds(i));
+            expected_ = remaining_ >= minDeposit_ ? remaining_ : 0;
         }
 
-        assertLe(
-            withdrawable,
-            vault.maxLiability(),
-            "invariant D: maxLiability < sum(position.withdrawableOf)"
-        );
+        assertEq(actual_, expected_, "invariant C: maxDeposit mismatch");
+
+        if (actual_ != 0) {
+            assertLe(actual_, cap_ - liability_, "invariant C: maxDeposit exceeds capacity");
+
+            // A non-zero maxDeposit must always mint at least one share (SC-1611).
+            if (actual_ <= type(uint256).max / RAY) {
+                assertGe(actual_ * RAY / nowChi_, 1, "invariant C: maxDeposit mints zero shares");
+            }
+        }
     }
 
     function vaultInvariant_D_vsr() public view {
         assertGe(vault.vsr(),    RAY,             "invariant D: vsr < RAY");
+        assertLe(vault.vsr(),    vault.MAX_VSR(), "invariant D: vsr > MAX_VSR");
         assertGe(vault.minVsr(), RAY,             "invariant D: minVsr < RAY");
         assertLe(vault.maxVsr(), vault.MAX_VSR(), "invariant D: maxVsr > MAX_VSR");
         assertLe(vault.minVsr(), vault.maxVsr(),  "invariant D: minVsr > maxVsr");
+    }
+
+    function vaultInvariant_E_assetAccounting() public view {
+        uint256 expected_ =
+            userHandler.ghostTotalDeposited() +
+            externalHandler.ghostTotalGiven() -
+            userHandler.ghostTotalWithdrawn() -
+            adminHandler.ghostTotalTaken();
+
+        assertEq(
+            asset.balanceOf(address(vault)),
+            expected_,
+            "invariant E: vault balance != net recorded flows"
+        );
+    }
+
+    function vaultInvariant_F_liabilityCoversWithdrawable() public view {
+        uint256 sum_ = _sumWithdrawable();
+
+        // Each deposit and each partial withdrawal can leave at most ~(nowChi / RAY + 2) wei of
+        // rounding slack where a position's principal exceeds its share value.
+        uint256 ops_   = userHandler.ghostDepositCount() + userHandler.ghostPartialWithdrawCount();
+        uint256 slack_ = ops_ * (vault.nowChi() / RAY + 2);
+
+        assertLe(
+            sum_,
+            vault.maxLiability() + slack_,
+            "invariant F: sum(withdrawableOf) > maxLiability + rounding slack"
+        );
+    }
+
+    function vaultInvariant_G_roles() public view {
+        assertTrue(vault.hasRole(DEFAULT_ADMIN_ROLE, admin), "invariant G: admin role lost");
+        assertTrue(vault.hasRole(SETTER_ROLE, setter),       "invariant G: setter role lost");
+        assertTrue(vault.hasRole(TAKER_ROLE, taker),         "invariant G: taker role lost");
+
+        assertEq(
+            vault.getRoleMemberCount(DEFAULT_ADMIN_ROLE), 1,
+            "invariant G: unexpected admin count"
+        );
+    }
+
+    function vaultInvariant_H_chiRhoSanity() public view {
+        assertGe(uint256(vault.chi()), RAY,                  "invariant H: chi < RAY");
+        assertLe(vault.rho(),          block.timestamp,      "invariant H: rho in the future");
+        assertGe(vault.nowChi(),       uint256(vault.chi()), "invariant H: nowChi < chi");
+    }
+
+    function vaultInvariant_I_sequentialPositionIds() public view {
+        uint256 count_ = userHandler.ghostDepositCount();
+
+        assertEq(
+            userHandler.numPositionIds(), count_,
+            "invariant I: tracked position ids != deposit count"
+        );
+
+        if (count_ > 0) {
+            assertEq(
+                userHandler.positionIds(count_ - 1), count_,
+                "invariant I: position ids not sequential"
+            );
+        }
     }
 
     /**********************************************************************************************/
@@ -140,6 +208,12 @@ contract SparkBoostedVaultInvariantTestBase is Test {
             vault.vestedYieldOf(positionId_),
             vault.yieldOf(positionId_),
             string(abi.encodePacked("invariant pos-B: vestedYield > yield for id ", vm.toString(positionId_)))
+        );
+
+        assertEq(
+            vault.unvestedYieldOf(positionId_),
+            vault.yieldOf(positionId_) - vault.vestedYieldOf(positionId_),
+            string(abi.encodePacked("invariant pos-B: unvested + vested != yield for id ", vm.toString(positionId_)))
         );
     }
 
@@ -167,9 +241,9 @@ contract SparkBoostedVaultInvariantTestBase is Test {
     function positionInvariant_E_postCliffMultiplierGtZero(uint256 positionId_) public view {
         ISparkBoostedVault.Position memory pos = vault.getPosition(positionId_);
 
-        uint64 cliff_ = vault.cliff();
+        uint256 elapsed_ = block.timestamp - pos.depositTime;
 
-        if (block.timestamp - pos.depositTime >= cliff_ && cliff_ != 0) {
+        if (elapsed_ >= vault.cliff() && elapsed_ > 0) {
             assertGt(
                 vault.vestingMultiplierOf(positionId_),
                 0,
@@ -188,6 +262,25 @@ contract SparkBoostedVaultInvariantTestBase is Test {
                 string(abi.encodePacked("invariant pos-F: multiplier != RAY after term for id ", vm.toString(positionId_)))
             );
         }
+    }
+
+    function positionInvariant_G_openPositionSanity(uint256 positionId_) public view {
+        ISparkBoostedVault.Position memory pos = vault.getPosition(positionId_);
+
+        assertGt(pos.shares,    0, string(abi.encodePacked("invariant pos-G: open position with zero shares for id ", vm.toString(positionId_))));
+        assertGt(pos.principal, 0, string(abi.encodePacked("invariant pos-G: open position with zero principal for id ", vm.toString(positionId_))));
+
+        assertLe(
+            pos.depositTime,
+            block.timestamp,
+            string(abi.encodePacked("invariant pos-G: depositTime in the future for id ", vm.toString(positionId_)))
+        );
+
+        assertEq(
+            vault.withdrawableOf(positionId_),
+            pos.principal + vault.vestedYieldOf(positionId_),
+            string(abi.encodePacked("invariant pos-G: withdrawable != principal + vestedYield for id ", vm.toString(positionId_)))
+        );
     }
 
     /**********************************************************************************************/
@@ -214,9 +307,13 @@ contract SparkBoostedVaultInvariantTestBase is Test {
             if (liquidity >= withdrawable) {
                 vault.withdraw(positionId_, owner_);
 
+                userHandler.noteExternalWithdraw(withdrawable);
+
                 assertEq(vault.getPosition(positionId_).depositTime, 0, "position not closed after full withdraw");
             } else if (liquidity > 0) {
                 vault.withdraw(positionId_, liquidity, owner_);
+
+                userHandler.noteExternalWithdraw(liquidity);
 
                 assertEq(asset.balanceOf(address(vault)), 0, "vault not drained after partial withdraw");
             }
@@ -226,16 +323,19 @@ contract SparkBoostedVaultInvariantTestBase is Test {
     }
 
     /**********************************************************************************************/
-    /*** Helper Function                                                                        ***/
+    /*** Helper Functions                                                                       ***/
     /**********************************************************************************************/
 
     function _give(uint256 amount_) internal {
-        address taker_ = adminHandler.taker();
+        externalHandler.giveExact(amount_);
+    }
 
-        deal(address(asset), taker_, amount_);
+    function _sumWithdrawable() internal view returns (uint256 sum_) {
+        uint256 n = userHandler.numPositionIds();
 
-        vm.prank(taker_);
-        asset.transfer(address(vault), amount_);
+        for (uint256 i = 0; i < n; i++) {
+            sum_ += vault.withdrawableOf(userHandler.positionIds(i));
+        }
     }
 
 }

@@ -39,4 +39,8 @@ contract HandlerBase is Test {
         MAX_AMOUNT = 10_000_000_000 * 10 ** IERC20Metadata(vault.asset()).decimals();
     }
 
+    function _min(uint256 a_, uint256 b_) internal pure returns (uint256) {
+        return a_ < b_ ? a_ : b_;
+    }
+
 }
