@@ -76,3 +76,14 @@ forge build
 ```bash
 forge test
 ```
+
+## Audits
+
+Audit reports are hosted on the auditors' public portfolio pages:
+
+| Auditor | Report | Version | Date |
+| --- | --- | --- | --- |
+| ChainSecurity | [Boosted Spark Savings Vault](https://www.chainsecurity.com/security-audit/boosted-spark-savings-vault/) | v1.0.0 | 2026-08-17 |
+| Cantina | [Sky: Spark Boosted Vault](https://cantina.xyz/portfolio/00c4c2b4-b6cb-4210-99a5-a1f880d61a1c) | v1.0.0 | 2026-08-13 |
+
+ChainSecurity reports are cumulative: each portfolio page hosts the latest version of the report, which covers all previously reviewed versions.
